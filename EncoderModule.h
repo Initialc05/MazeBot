@@ -1,8 +1,6 @@
 #ifndef ENCODER_MODULE_H
 #define ENCODER_MODULE_H
 
-#include <Arduino.h>
-
 // 编码器引脚定义
 #define LEFT_ENC_A PC6
 #define LEFT_ENC_B PB5
@@ -40,9 +38,6 @@ void initEncoders() {
   pinMode(LEFT_ENC_B, INPUT_PULLUP);
   pinMode(RIGHT_ENC_A, INPUT_PULLUP);
   pinMode(RIGHT_ENC_B, INPUT_PULLUP);
-
-  pinMode(LEFT_ENC_A, INPUT_PULLUP);
-  pinMode(LEFT_ENC_B, INPUT_PULLUP);
 
   attachInterrupt(digitalPinToInterrupt(LEFT_ENC_A), leftEncoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(RIGHT_ENC_A), rightEncoderISR, CHANGE);

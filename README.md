@@ -64,20 +64,18 @@ MazeBot下位机由STM32主控板、电机驱动、编码器、IMU、雷达、�
 | 左轮编码器 E1B     | LEFT_ENC_B  | PB5              | 编码器B相                  |
 | 右轮编码器 E2A     | RIGHT_ENC_A | PA8              | 编码器A相                  |
 | 右轮编码器 E2B     | RIGHT_ENC_B | PA9              | 编码器B相                  |
-| 电机驱动电源       | VCC         | 3.3V/5V          | 依据驱动模块规格           |
-| 电机驱动地线       | GND         | GND              | 共地                       |
 | IMU电源            | VCC         | 3.3V             |                            |
 | IMU地线            | GND         | GND              |                            |
 | IMU I2C SCL        | SCL         | PB8              | I2C时钟线                  |
 | IMU I2C SDA        | SDA         | PB9              | I2C数据线                  |
 | 雷达电源           | VCC         | 5V               |                            |
 | 雷达地线           | GND         | GND              |                            |
-| 雷达串口TX         | TX          | PA9              | 雷达数据输出到主控RX       |
-| 雷达串口RX         | RX          | PA10             | 主控数据输出到雷达         |
+| 雷达串口TX         | TX          | PD2              | UART_5 RX                  |
+| 雷达串口RX         | RX          | PC12             | UART_5 TX                  |
 | 蓝牙电源           | VCC         | 5V               |                            |
 | 蓝牙地线           | GND         | GND              |                            |
-| 蓝牙串口RX         | RX          | PA0（UART_4 TX） | 蓝牙模块标RX的引脚接主控TX |
-| 蓝牙串口TX         | TX          | PA1（UART_4 RX） | 蓝牙模块标TX的引脚接主控RX |
+| 蓝牙串口RX         | RX          | PA0              | UART_4 TX                  |
+| 蓝牙串口TX         | TX          | PA1              | UART_4 RX                  |
 
 ---
 

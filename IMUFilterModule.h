@@ -1,9 +1,6 @@
 #ifndef IMU_FILTER_MODULE_H
 #define IMU_FILTER_MODULE_H
 
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
-
 // HardwareSerial BTSerial(PA1, PA0);  // 蓝牙串口
 Adafruit_MPU6050 imu;
 

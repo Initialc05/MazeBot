@@ -1,22 +1,26 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <STM32FreeRTOS.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <PID_v1.h>
 
-HardwareSerial BTSerial(PA1, PA0);  // 蓝牙串口
+// 蓝牙串口
+HardwareSerial BTSerial(PA1, PA0); 
 
 // 功能定义模块
 #include "IMUFilterModule.h"
 #include "LidarModule.h"
-#include "MotorControl.h"
 #include "EncoderModule.h"
+#include "MotorControl.h"
 
 // 测试测试模块（测试模块的函数定义在自己的头文件里）
 #include "MotorTestTask.h"
 #include "EncoderTestTask.h"
 
-// IMU任务
+// IMU 任务
 void IMUTask(void *pvParameters) {
-  Serial.println("IMU Task Start");
+  Serial.println("IMU 任务启动");
   while (1) {
     updateIMUWithFilter();
     vTaskDelay(pdMS_TO_TICKS(500));
@@ -59,6 +63,9 @@ void MotorControlTask(void *pvParameters) {
 }
 
 void setup() {
+  pinMode(LEFT_ENC_A, INPUT_PULLUP);
+  pinMode(LEFT_ENC_B, INPUT_PULLUP);
+
   Wire.begin(PB8, PB9);  // I2C用于MPU
   Serial.begin(115200);  // 调试串口
 
@@ -75,7 +82,6 @@ void setup() {
   xTaskCreate(IMUTask, "IMU", 4096, NULL, 1, NULL);
   xTaskCreate(LidarTask, "LIDAR", 2048, NULL, 3, NULL);
   xTaskCreate(OdomPrintTask, "Odom1D", 4096, NULL, 1, NULL);         
-  // xTaskCreate(PIDParamTask, "PIDParam", 1024, NULL, 1, NULL);    // 使用PID控制
   xTaskCreate(CommandTask, "CMD", 512, NULL, 1, NULL);              // 启用蓝牙控制任务
   xTaskCreate(MotorControlTask, "MotorCtrl", 1024, NULL, 2, NULL);  // 启用电机控制任务
 

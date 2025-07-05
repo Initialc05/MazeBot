@@ -2,10 +2,6 @@
 #ifndef MOTOR_CONTROL_H
 #define MOTOR_CONTROL_H
 
-#include <Arduino.h>
-#include "EncoderModule.h"
-#include <PID_v1.h>
-
 // 左轮 控制信号
 #define AIN1 PC8
 #define AIN2_PWM PB10
