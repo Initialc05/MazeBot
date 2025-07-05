@@ -1,118 +1,115 @@
-#include "wiring_constants.h"
 #ifndef MOTOR_CONTROL_H
 #define MOTOR_CONTROL_H
+#include <Arduino.h>         
+#include "wiring_constants.h"
 
-// 左轮 控制信号
-#define AIN1 PC8
-#define AIN2_PWM PB10
+#define AIN1      PC8   // 左轮方向
+#define AIN2_PWM  PB10  // 左轮 PWM
+#define BIN1      PC7   // 右轮方向
+#define BIN2_PWM  PB3   // 右轮 PWM
 
-// 右轮 控制信号
-#define BIN1 PC7
-#define BIN2_PWM PB3
-
-// 蓝牙控制相关变量
 unsigned long lastCommandTime = 0;
-const unsigned long COMMAND_TIMEOUT = 200;  // 指令超时时间（ms）
-bool commandActive = false;
-char currentCommand = 'x';
+const unsigned long COMMAND_TIMEOUT = 200;   
+bool   commandActive   = false;
+char   currentCommand  = 'x';
 
-// 电机控制变量
-int leftDuty = 0;
-int rightDuty = 0;
-int leftDirection = -1;
-int rightDirection = -1;
+int leftDuty  = 0;     // 0-100
+int rightDuty = 0;     // 0-100
+int leftDir   = -1;    // 1 = 正转, -1 = 反转
+int rightDir  = -1;
+
+// 统一占空比 → 实际 PWM（0-255），确保同 duty 同功率
+static inline int dutyToPwm(int duty, int dir)
+{
+  duty = constrain(duty, 0, 100);
+  /* H-Bridge 接法导致正反转 PWM 极性相反：
+     - 正转(IN1=H)：duty 越大 → PWM 越高
+     - 反转(IN1=L)：duty 越大 → PWM 越高（同速要求 → PWM 同方向）
+     解决：正转时需把 duty 倒过来，反转保持原样                     
+  */
+  return (dir > 0)
+         ? map(100 - duty, 0, 100, 0, 255)  // 正转：duty 0=255(刹车), 100=0(满速)
+         : map(       duty, 0, 100, 0, 255); // 反转：duty 0=0  (刹车), 100=255(满速)
+}
 
 // 电机初始化
-void initMotors() {
+void initMotors()
+{
   Serial.begin(115200);
-  pinMode(AIN1, OUTPUT);
-  pinMode(AIN2_PWM, OUTPUT);
-  pinMode(BIN1, OUTPUT);
-  pinMode(BIN2_PWM, OUTPUT);
+  pinMode(AIN1, OUTPUT);  pinMode(AIN2_PWM, OUTPUT);
+  pinMode(BIN1, OUTPUT);  pinMode(BIN2_PWM, OUTPUT);
 
-  Serial.println("电机初始化完成，蓝牙控制启动");
-  Serial.println("蓝牙指令：w=前进 s=后退 a=左转 d=右转 x=停止");
-  Serial.println("控制逻辑：指令持续执行500ms，超时自动刹车");
+  Serial.println(F("电机初始化完成，蓝牙控制启动"));
+  Serial.println(F("指令: w=前 s=后 a=左 d=右 x=停"));
+  Serial.println(F("占空比 0=刹车, 100=满速 (方向无关)"));
 }
 
-// 设置占空比和方向
-void setMotor(int l_pwm, int r_pwm, int l_dir, int r_dir) {
-  leftDuty = l_pwm;
-  rightDuty = r_pwm;
-  leftDirection = l_dir;
-  rightDirection = r_dir;
+// 主输出接口：设定左右轮 duty 与 dir（1/-1） 
+void setMotor(int l_pwm, int r_pwm, int l_dir, int r_dir)
+{
+  leftDuty   = constrain(l_pwm,  0, 100);
+  rightDuty  = constrain(r_pwm, 0, 100);
+  leftDir    = (l_dir >= 0)  ?  1 : -1;
+  rightDir   = (r_dir >= 0)  ?  1 : -1;
 
-  int l_out = map(leftDuty, 0, 100, 0, 255);
-  int r_out = map(rightDuty, 0, 100, 0, 255);
+  // 方向端：IN1 高 = 正; 低 = 反 
+  digitalWrite(AIN1, (leftDir  > 0) ? HIGH : LOW);
+  digitalWrite(BIN1, (rightDir > 0) ? HIGH : LOW);
 
-  digitalWrite(AIN1, (leftDirection > 0) ? HIGH : LOW);
-  analogWrite(AIN2_PWM, l_out);
-
-  digitalWrite(BIN1, (rightDirection > 0) ? HIGH : LOW);
-  analogWrite(BIN2_PWM, r_out);
+  // PWM 端：统一占空比映射 
+  analogWrite(AIN2_PWM, dutyToPwm(leftDuty,  leftDir));
+  analogWrite(BIN2_PWM, dutyToPwm(rightDuty, rightDir));
 }
 
-// 处理蓝牙命令
-void processBluetoothCommand(char cmd) {
-  currentCommand = cmd;
-  lastCommandTime = millis();
-  commandActive = true;
+// 蓝牙指令解析
+void processBluetoothCommand(char cmd)
+{
+  currentCommand   = cmd;
+  lastCommandTime  = millis();
+  commandActive    = (cmd != 'x');
 
   switch (cmd) {
-    case 'w':
-      Serial.println(F("⬆️ 前进"));
-      break;
-    case 's':
-      Serial.println(F("⬇️ 后退"));
-      break;
-    case 'a':
-      Serial.println(F("⬅️ 左转"));
-      break;
-    case 'd':
-      Serial.println(F("➡️ 右转"));
-      break;
-    case 'x':
-    default:
-      Serial.println(F("⏹️ 停止"));
-      commandActive = false;
-      break;
+    case 'w': Serial.println(F("⬆️ 前进")); break;
+    case 's': Serial.println(F("⬇️ 后退")); break;
+    case 'a': Serial.println(F("⬅️ 左转")); break;
+    case 'd': Serial.println(F("➡️ 右转")); break;
+    case 'x': Serial.println(F("⏹️ 停止")); break;
+    default : Serial.println(F("❓ 未知指令")); break;
   }
 }
 
-// 声明外部变量（在MazeBot.ino中使用）
+// *示范*：不做 PID，仅按照当前 cmd 固定 duty 输出 
+void updateMotorControlWithoutPID()
+{
+  // 指令超时自动刹车 
+  if (commandActive && (millis() - lastCommandTime >= COMMAND_TIMEOUT)) {
+    setMotor(0, 0, leftDir, rightDir);  // 保持方向，停转
+    commandActive  = false;
+    currentCommand = 'x';
+    Serial.println(F("⌛ 指令超时，已刹车"));
+    return;
+  }
+  if (!commandActive) {                 // 空闲
+    setMotor(0, 0, leftDir, rightDir);
+    return;
+  }
+
+  // 持续执行当前指令
+  switch (currentCommand) {
+    case 'w': setMotor(40, 40,  1,  1);   break; // 前进
+    case 's': setMotor(40, 40, -1, -1);   break; // 后退
+    case 'a': setMotor(40, 40, -1,  1);   break; // 左转
+    case 'd': setMotor(40, 40,  1, -1);   break; // 右转
+    default : setMotor(0,  0,  leftDir, rightDir);
+  }
+}
+
+// 在 MazeBot.ino 中引用的外部声明 
 extern unsigned long lastCommandTime;
 extern const unsigned long COMMAND_TIMEOUT;
-extern bool commandActive;
-extern char currentCommand;
-extern int leftDuty;
-extern int rightDuty;
-
-// 直接输出PWM，不做PID调节
-void updateMotorControlWithoutPID() {
-  // 检查指令是否超时（COMMAND_TIMEOUT时间窗内没有新指令）
-  if (commandActive && (millis() - lastCommandTime >= COMMAND_TIMEOUT)) {
-    setMotor(0, 0, -1, -1);  // 立即刹车
-    commandActive = false;
-    currentCommand = 'x';
-    Serial.println("指令超时，立即刹车");
-    return;
-  }
-
-  // 如果当前没有指令激活，不动
-  if (!commandActive) {
-    setMotor(0, 0, -1, -1);
-    return;
-  }
-
-  // 按当前命令持续执行（直到超时或收到新指令）
-  switch (currentCommand) {
-    case 'w': setMotor(75, 75, 1, 1); break;    // 前进
-    case 's': setMotor(50, 50, -1, -1); break;  // 后退
-    case 'a': setMotor(30, 80, -1, 1); break;   // 左转
-    case 'd': setMotor(80, 30, 1, -1); break;   // 右转
-    case 'x': setMotor(0, 0, -1, -1); break;    // 刹车
-    default: setMotor(0, 0, -1, -1); break;     // 停止
-  }
-}
+extern bool   commandActive;
+extern char   currentCommand;
+extern int    leftDuty;
+extern int    rightDuty;
 
 #endif

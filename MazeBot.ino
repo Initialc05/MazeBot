@@ -62,8 +62,7 @@ void MotorControlTask(void *pvParameters) {
   }
 }
 
-void setup() {
-  pinMode(LEFT_ENC_A, INPUT_PULLUP);
+void setup() { 
   pinMode(LEFT_ENC_B, INPUT_PULLUP);
 
   Wire.begin(PB8, PB9);  // I2C用于MPU
