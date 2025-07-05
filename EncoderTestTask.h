@@ -1,6 +1,7 @@
 #ifndef ENCODER_TEST_TASK_H
 #define ENCODER_TEST_TASK_H
 
+// 编码器测试任务
 void EncoderTestTask(void *pvParameters) {
   while (1) {
     Serial.print("L_ticks: ");
