@@ -1,12 +1,8 @@
 #ifndef LIDAR_MODULE_H
 #define LIDAR_MODULE_H
 
-// 雷达串口
-HardwareSerial Serial5(PD2, PC12);  // TX, Rx
-
 // 内部缓冲区
-// RPLidar legacy 测量节点：6 byte =
-// 0 sync+quality，1 quality+flags，2 angle LSB，3 angle MSB，4 dist LSB，5 dist MSB
+// RPLidar legacy 测量节点：6 byte = 0 sync+quality，1 quality+flags，2 angle LSB，3 angle MSB，4 dist LSB，5 dist MSB
 static uint8_t buf[6];
 static uint8_t idx = 0;
 
@@ -53,14 +49,14 @@ inline void readAndSendLidar() {
 
     // 串口输出
     Serial.print(F("LIDAR:"));
-    Serial.print(angle, 1);  // 一位小数即可
+    Serial.print(angle, 1);  // 一位小数
     Serial.print(',');
     Serial.print(distance, 2);  // 两位小数
     Serial.print(F(",Q:"));
     Serial.println(quality);
     // 蓝牙输出 
     BTSerial.print(F("LIDAR:"));
-    BTSerial.print(angle, 1);  // 一位小数即可
+    BTSerial.print(angle, 1);  // 一位小数
     BTSerial.print(',');
     BTSerial.print(distance, 2);  // 两位小数
     BTSerial.print(F(",Q:"));
