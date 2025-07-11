@@ -3,8 +3,8 @@
 #include <PID_v1.h>
 
 HardwareSerial BTSerial(PA1, PA0);  // 蓝牙串口
-HardwareSerial IMU900Serial(PA3, PA2);  // IMU900串口
-HardwareSerial Serial5(PD2, PC12);  // 雷达串口
+HardwareSerial IMU900Serial(PA10, PB6);  // IMU900串口
+HardwareSerial LidarSerial(PD2, PC12);  // 雷达串口
 
 // 功能定义模块
 #include "im948_CMD.h"
@@ -19,18 +19,10 @@ HardwareSerial Serial5(PD2, PC12);  // 雷达串口
 // IMU900任务
 void IMU900Task(void *pvParam)
 {
-  IMU900Serial.begin(115200);
-  initIMU900();
-
+  
   while (1) {
-    while (IMU900Serial.available())
-      Cmd_GetPkt(IMU900Serial.read());
-
-    if (isNewData) {
-      isNewData = 0;
-      // 业务处理 AngleX / Y / Z ...
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));
+    updateIMU900();
+    vTaskDelay(pdMS_TO_TICKS(2));
   }
 }
 
@@ -70,16 +62,19 @@ void MotorControlTask(void *pvParameters) {
 
 void setup() {
   Serial.begin(115200);
+  IMU900Serial.begin(115200);
   BTSerial.begin(9600);     // 目前会和IM900冲突,需要更改引脚
   
   Serial.println("MazeBot初始化开始...");
+
+  initIMU900();
   initLidar();
   initMotors();
   initEncoders();
   initPID();
   
   // 启动任务
-  //xTaskCreate(IMU900Task, "IMU900", 2048, NULL, 3, NULL);
+  xTaskCreate(IMU900Task, "IMU900", 2048, NULL, 3, NULL);
   xTaskCreate(LidarTask, "LIDAR", 2048, NULL, 3, NULL);
   xTaskCreate(CommandTask, "CMD", 512, NULL, 1, NULL);              
   xTaskCreate(MotorControlTask, "MotorCtrl", 1024, NULL, 2, NULL); 

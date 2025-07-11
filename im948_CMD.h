@@ -61,6 +61,7 @@ extern U8 Cmd_GetPkt(U8 byte);
 
 // 当接收到有效数据包，会回调进入到 Cmd_RxUnpack(U8 *buf, U8 DLen) 函数里，用户在该函数里处理数据即可，如把欧拉角赋值给下一行的全局变量
 extern F32 AngleX, AngleY, AngleZ;  // 从Cmd_RxUnpack中获取到的欧拉角数据更新到全局变量以便用户自己的业务逻辑使用, 若还需要其它数据，可参考进行增加即可
+extern F32 OffsetX, OffsetY, OffsetZ;  // 从Cmd_RxUnpack中获取到的空间位移数据更新到全局变量
 extern U8 isNewData;                // 1=更新了新的数据到全局变量里了
 
 extern void im948_test(void);  // 测试示例 功能是监听调试串口发来的操作指令，然后对模块进行操作，若需要，则放在循环里即可
@@ -68,6 +69,7 @@ extern U8 im948_ctl;
 
 // ================================模块的操作指令=================================
 extern void initIMU900();  // IMU 初始化
+extern void updateIMU900(); // IMU 数据更新
 
 extern U8 targetDeviceAddress;  // 通信地址，设为0-254指定则设备地址，设为255则不指定设备(即广播), 当需要使用485总线形式通信时通过该参数选中要操作的设备，若仅仅是串口1对1通信设为广播地址255即可
 extern void Cmd_02(void);       // 睡眠传感器
