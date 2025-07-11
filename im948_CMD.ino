@@ -1,13 +1,3 @@
-/******************************************************************************
-                        设备与IM948模块之间的串口通信库
-版本: V1.05
-记录: 1、增加 加速计和陀螺仪量程可设置
-      2、增加 磁场校准开始命令
-      3、增加 设置陀螺仪自动校正标识命令
-      4、增加 设置静止节能模式的触发时长
-      5、增加 设置上传圈数和支持数据透传
-      6、增加 设置z角度为指定值
-*******************************************************************************/
 #include "im948_CMD.h"
 
 U8 targetDeviceAddress = 255;  // 通信地址，设为0-254指定则设备地址，设为255则不指定设备(即广播), 当需要使用485总线形式通信时通过该参数选中要操作的设备，若仅仅是串口1对1通信设为广播地址255即可
@@ -19,6 +9,7 @@ U8 CalcSum1(U8 *Buf, int Len) {
   }
   return Sum;
 }
+
 void *Memcpy(void *s1, const void *s2, unsigned int n) {
   char *p1 = (char *)s1;
   const char *p2 = (char *)s2;
@@ -30,6 +21,7 @@ void *Memcpy(void *s1, const void *s2, unsigned int n) {
   }
   return s1;
 }
+
 #ifdef __Debug
 void myPrintf(const char *fmt, ...) {
   static char buf[256];
@@ -39,6 +31,7 @@ void myPrintf(const char *fmt, ...) {
   va_end(args);
   Serial.print(buf);
 }
+
 void Dbp_U8_buf(const char *sBeginInfo, const char *sEndInfo,
                 const char *sFormat,
                 const U8 *Buf, U32 Len) {
@@ -61,21 +54,21 @@ void initIMU900() {
   Dbp("正在初始化IMU900...\r\n");
   delay(3000);  // 上电后先延迟一会，确保传感器已上电准备完毕
 
-  // 唤醒传感器，并配置好传感器工作参数，然后开启主动上报---------------
-  Cmd_03();  // 1 唤醒传感器
+  // 唤醒传感器，并配置好传感器工作参数，然后开启主动上报
+  Cmd_03();                                  // 1 唤醒传感器
   /**
-       * 设置设备参数
-     * @param accStill    惯导-静止状态加速度阀值 单位dm/s?
-     * @param stillToZero 惯导-静止归零速度(单位cm/s) 0:不归零 255:立即归零
-     * @param moveToZero  惯导-动态归零速度(单位cm/s) 0:不归零
-     * @param isCompassOn 1=需开启磁场 0=需关闭磁场
-     * @param barometerFilter 气压计的滤波等级[取值0-3],数值越大越平稳但实时性越差
-     * @param reportHz 数据主动上报的传输帧率[取值0-250HZ], 0表示0.5HZ
-     * @param gyroFilter    陀螺仪滤波系数[取值0-2],数值越大越平稳但实时性越差
-     * @param accFilter     加速计滤波系数[取值0-4],数值越大越平稳但实时性越差
-     * @param compassFilter 磁力计滤波系数[取值0-9],数值越大越平稳但实时性越差
-     * @param Cmd_ReportTag 功能订阅标识
-     */
+    * 设置设备参数
+    * @param accStill    惯导-静止状态加速度阀值 单位dm/s?
+    * @param stillToZero 惯导-静止归零速度(单位cm/s) 0:不归零 255:立即归零
+    * @param moveToZero  惯导-动态归零速度(单位cm/s) 0:不归零
+    * @param isCompassOn 1=需开启磁场 0=需关闭磁场
+    * @param barometerFilter 气压计的滤波等级[取值0-3],数值越大越平稳但实时性越差
+    * @param reportHz 数据主动上报的传输帧率[取值0-250HZ], 0表示0.5HZ
+    * @param gyroFilter    陀螺仪滤波系数[取值0-2],数值越大越平稳但实时性越差
+    * @param accFilter     加速计滤波系数[取值0-4],数值越大越平稳但实时性越差
+    * @param compassFilter 磁力计滤波系数[取值0-9],数值越大越平稳但实时性越差
+    * @param Cmd_ReportTag 功能订阅标识
+    */
   Cmd_12(5, 0, 0, 0, 3, 2, 2, 4, 9, 0xFFF);  // 2 设置设备参数(内容1 stillToZero=0 不归零)
   Cmd_13();                                  // 3 三维空间位置清零
   Cmd_05();                                  // 4 AngleX Y Z 清零
@@ -97,7 +90,7 @@ void updateIMU900() {
     Serial.print(OffsetY, 3);
     Serial.print("m, Theta(Yaw): ");
     Serial.print(AngleZ, 3);
-    Serial.println("°");
+    Serial.println("deg");
 
     BTSerial.print("Odom - X: ");
     BTSerial.print(OffsetX, 3);
@@ -105,21 +98,21 @@ void updateIMU900() {
     BTSerial.print(OffsetY, 3);
     BTSerial.print("m, Theta(Yaw): ");
     BTSerial.print(AngleZ, 3);
-    BTSerial.println("°");
+    BTSerial.println("deg");
   }
-
 }
 
 static void Cmd_Write(U8 *pBuf, int Len);
 static void Cmd_RxUnpack(U8 *buf, U8 DLen);
+
 /**
- * 发送CMD命令
- *
- * @param pDat 要发送的数据体
- * @param DLen 数据体的长度
- *
- * @return int 0=成功, -1=失败
- */
+  * 发送CMD命令
+  *
+  * @param pDat 要发送的数据体
+  * @param DLen 数据体的长度
+  *
+  * @return int 0=成功, -1=失败
+  */
 int Cmd_PackAndTx(U8 *pDat, U8 DLen) {
   U8 buf[50 + 5 + CmdPacketMaxDatSizeTx] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -141,11 +134,12 @@ int Cmd_PackAndTx(U8 *pDat, U8 DLen) {
   Cmd_Write(buf, DLen + 55);
   return 0;
 }
+
 /**
- * 用于捕获数据包, 用户只需把接收到的每字节数据传入该函数即可
- * @param byte 传入接收到的每字节数据
- * @return U8 1=接收到完整数据包, 0未获取到完整数据包
- */
+  * 用于捕获数据包, 用户只需把接收到的每字节数据传入该函数即可
+  * @param byte 传入接收到的每字节数据
+  * @return U8 1=接收到完整数据包, 0未获取到完整数据包
+  */
 U8 Cmd_GetPkt(U8 byte) {
   static U8 CS = 0;  // 校验和
   static U8 i = 0;
@@ -222,8 +216,7 @@ U8 Cmd_GetPkt(U8 byte) {
   return 0;
 }
 
-
-// ================================模块的操作指令=================================
+// ==================== 模块的操作指令 ==================== 
 
 // 睡眠传感器
 void Cmd_02(void) {
@@ -231,49 +224,55 @@ void Cmd_02(void) {
   Dbp("\r\nsensor off--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 唤醒传感器
 void Cmd_03(void) {
   U8 buf[1] = { 0x03 };
   Dbp("\r\nsensor on--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 关闭数据主动上报
 void Cmd_18(void) {
   U8 buf[1] = { 0x18 };
   Dbp("\r\nauto report off--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 开启数据主动上报
 void Cmd_19(void) {
   U8 buf[1] = { 0x19 };
   Dbp("\r\nauto report on--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 获取1次订阅的功能数据
 void Cmd_11(void) {
   U8 buf[1] = { 0x11 };
   Dbp("\r\nget report--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 获取设备属性和状态
 void Cmd_10(void) {
   U8 buf[1] = { 0x10 };
   Dbp("\r\nget report--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 /**
- * 设置设备参数
- * @param accStill    惯导-静止状态加速度阀值 单位dm/s?
- * @param stillToZero 惯导-静止归零速度(单位cm/s) 0:不归零 255:立即归零
- * @param moveToZero  惯导-动态归零速度(单位cm/s) 0:不归零
- * @param isCompassOn 1=需融合磁场 0=不融合磁场
- * @param barometerFilter 气压计的滤波等级[取值0-3],数值越大越平稳但实时性越差
- * @param reportHz 数据主动上报的传输帧率[取值0-250HZ], 0表示0.5HZ
- * @param gyroFilter    陀螺仪滤波系数[取值0-2],数值越大越平稳但实时性越差
- * @param accFilter     加速计滤波系数[取值0-4],数值越大越平稳但实时性越差
- * @param compassFilter 磁力计滤波系数[取值0-9],数值越大越平稳但实时性越差
- * @param Cmd_ReportTag 功能订阅标识
- */
+  * 设置设备参数
+  * @param accStill    惯导-静止状态加速度阀值 单位dm/s?
+  * @param stillToZero 惯导-静止归零速度(单位cm/s) 0:不归零 255:立即归零
+  * @param moveToZero  惯导-动态归零速度(单位cm/s) 0:不归零
+  * @param isCompassOn 1=需融合磁场 0=不融合磁场
+  * @param barometerFilter 气压计的滤波等级[取值0-3],数值越大越平稳但实时性越差
+  * @param reportHz 数据主动上报的传输帧率[取值0-250HZ], 0表示0.5HZ
+  * @param gyroFilter    陀螺仪滤波系数[取值0-2],数值越大越平稳但实时性越差
+  * @param accFilter     加速计滤波系数[取值0-4],数值越大越平稳但实时性越差
+  * @param compassFilter 磁力计滤波系数[取值0-9],数值越大越平稳但实时性越差
+  * @param Cmd_ReportTag 功能订阅标识
+  */
 void Cmd_12(U8 accStill, U8 stillToZero, U8 moveToZero, U8 isCompassOn, U8 barometerFilter, U8 reportHz, U8 gyroFilter, U8 accFilter, U8 compassFilter, U16 Cmd_ReportTag) {
   U8 buf[11] = { 0x12 };
   buf[1] = accStill;
@@ -289,45 +288,51 @@ void Cmd_12(U8 accStill, U8 stillToZero, U8 moveToZero, U8 isCompassOn, U8 barom
   Dbp("\r\nset parameters--\r\n");
   Cmd_PackAndTx(buf, 11);
 }
+
 // 惯导三维空间位置清零
 void Cmd_13(void) {
   U8 buf[1] = { 0x13 };
   Dbp("\r\nclear INS position--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 计步数清零
 void Cmd_16(void) {
   U8 buf[1] = { 0x16 };
   Dbp("\r\nclear steps--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 恢复出厂校准参数
 void Cmd_14(void) {
   U8 buf[1] = { 0x14 };
   Dbp("\r\nRestore calibration parameters from factory mode--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 保存当前校准参数为出厂校准参数
 void Cmd_15(void) {
   U8 buf[3] = { 0x15, 0x88, 0x99 };
   Dbp("\r\nSave calibration parameters to factory mode--\r\n");
   Cmd_PackAndTx(buf, 3);
 }
+
 // 加速计简易校准 模块静止在水平面时，发送该指令并收到回复后等待9秒即可
 void Cmd_07(void) {
   U8 buf[1] = { 0x07 };
   Dbp("\r\nacceleration calibration--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 /**
- * 加速计高精度校准
- * @param flag 若模块未处于校准状态时：
- *                 值0 表示请求开始一次校准并采集1个数据
- *                 值255 表示询问设备是否正在校准
- *             若模块正在校准中:
- *                 值1 表示要采集下1个数据
- *                 值255 表示要采集最后1个数据并结束
- */
+  * 加速计高精度校准
+  * @param flag 若模块未处于校准状态时：
+  *                 值0 表示请求开始一次校准并采集1个数据
+  *                 值255 表示询问设备是否正在校准
+  *             若模块正在校准中:
+  *                 值1 表示要采集下1个数据
+  *                 值255 表示要采集最后1个数据并结束
+  */
 void Cmd_17(U8 flag) {
   U8 buf[2] = { 0x17 };
   buf[1] = flag;
@@ -342,41 +347,47 @@ void Cmd_17(U8 flag) {
   }
   Cmd_PackAndTx(buf, 2);
 }
+
 // 开始磁力计校准
 void Cmd_32(void) {
   U8 buf[1] = { 0x32 };
   Dbp("\r\ncompass calibrate begin--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 结束磁力计校准
 void Cmd_04(void) {
   U8 buf[1] = { 0x04 };
   Dbp("\r\ncompass calibrate end--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // z轴角归零
 void Cmd_05(void) {
   U8 buf[1] = { 0x05 };
   Dbp("\r\nz-axes to zero--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // xyz世界坐标系清零
 void Cmd_06(void) {
   U8 buf[1] = { 0x06 };
   Dbp("\r\nWorldXYZ-axes to zero--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 恢复默认的自身坐标系Z轴指向及恢复默认的世界坐标系
 void Cmd_08(void) {
   U8 buf[1] = { 0x08 };
   Dbp("\r\naxesZ WorldXYZ-axes to zero--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 /**
- * 设置PCB安装方向矩阵
- * @param accMatrix 加速计方向矩阵
- * @param comMatrix 磁力计方向矩阵
- */
+  * 设置PCB安装方向矩阵
+  * @param accMatrix 加速计方向矩阵
+  * @param comMatrix 磁力计方向矩阵
+  */
 void Cmd_20(S8 *accMatrix, S8 *comMatrix) {
   U8 buf[19] = { 0x20 };
   Memcpy(&buf[1], accMatrix, 9);
@@ -384,35 +395,39 @@ void Cmd_20(S8 *accMatrix, S8 *comMatrix) {
   Dbp("\r\nz-axes to zero--\r\n");
   Cmd_PackAndTx(buf, 19);
 }
+
 // 读取PCB安装方向矩阵
 void Cmd_21(void) {
   U8 buf[1] = { 0x21 };
   Dbp("\r\nget PCB direction--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 /**
- * 设置蓝牙广播名称
- * @param bleName 蓝牙名称(最多支持15个字符长度,不支持中文)
- */
+  * 设置蓝牙广播名称
+  * @param bleName 蓝牙名称(最多支持15个字符长度,不支持中文)
+  */
 void Cmd_22(const char *bleName) {
   U8 buf[17] = { 0x22 };
   Memcpy(&buf[1], bleName, 16);
   Dbp("\r\nset BLE name--\r\n");
   Cmd_PackAndTx(buf, 17);
 }
+
 // 读取蓝牙广播名称
 void Cmd_23(void) {
   U8 buf[1] = { 0x23 };
   Dbp("\r\nget BLE name--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 /**
- * 设置关机电压和充电参数
- * @param PowerDownVoltageFlag 关机电压选择 0=3.4V(锂电池用) 1=2.7V(其它干电池用)
- * @param charge_full_mV  充电截止电压 0:3962mv 1:4002mv 2:4044mv 3:4086mv 4:4130mv 5:4175mv 6:4222mv 7:4270mv 8:4308mv 9:4349mv 10:4391mv
- * @param charge_full_mA 充电截止电流 0:2ma 1:5ma 2:7ma 3:10ma 4:15ma 5:20ma 6:25ma 7:30ma
- * @param charge_mA      充电电流 0:20ma 1:30ma 2:40ma 3:50ma 4:60ma 5:70ma 6:80ma 7:90ma 8:100ma 9:110ma 10:120ma 11:140ma 12:160ma 13:180ma 14:200ma 15:220ma
- */
+  * 设置关机电压和充电参数
+  * @param PowerDownVoltageFlag 关机电压选择 0=3.4V(锂电池用) 1=2.7V(其它干电池用)
+  * @param charge_full_mV  充电截止电压 0:3962mv 1:4002mv 2:4044mv 3:4086mv 4:4130mv 5:4175mv 6:4222mv 7:4270mv 8:4308mv 9:4349mv 10:4391mv
+  * @param charge_full_mA 充电截止电流 0:2ma 1:5ma 2:7ma 3:10ma 4:15ma 5:20ma 6:25ma 7:30ma
+  * @param charge_mA      充电电流 0:20ma 1:30ma 2:40ma 3:50ma 4:60ma 5:70ma 6:80ma 7:90ma 8:100ma 9:110ma 10:120ma 11:140ma 12:160ma 13:180ma 14:200ma 15:220ma
+  */
 void Cmd_24(U8 PowerDownVoltageFlag, U8 charge_full_mV, U8 charge_full_mA, U8 charge_mA) {
   U8 buf[5] = { 0x24 };
   buf[1] = (PowerDownVoltageFlag <= 1) ? PowerDownVoltageFlag : 1;
@@ -422,23 +437,26 @@ void Cmd_24(U8 PowerDownVoltageFlag, U8 charge_full_mV, U8 charge_full_mA, U8 ch
   Dbp("\r\nset PowerDownVoltage and charge parameters--\r\n");
   Cmd_PackAndTx(buf, 5);
 }
+
 // 读取 关机电压和充电参数
 void Cmd_25(void) {
   U8 buf[1] = { 0x25 };
   Dbp("\r\nget PowerDownVoltage and charge parameters--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 断开蓝牙连接 该指令不会有回复
 void Cmd_26(void) {
   U8 buf[1] = { 0x26 };
   Dbp("\r\nble disconnect--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 /**
- * 设置用户的GPIO引脚
- *
- * @param M 0=浮空输入, 1=上拉输入, 2=下拉输入, 3=输出0, 4=输出1
- */
+  * 设置用户的GPIO引脚
+  *
+  * @param M 0=浮空输入, 1=上拉输入, 2=下拉输入, 3=输出0, 4=输出1
+  */
 void Cmd_27(U8 M) {
   U8 buf[2] = { 0x27 };
   buf[1] = (M << 4) & 0xf0;
@@ -452,6 +470,7 @@ void Cmd_2A(void) {
   Dbp("\r\nreset--\r\n");
   Cmd_PackAndTx(buf, 1);
 }
+
 // 设备关机
 void Cmd_2B(void) {
   U8 buf[1] = { 0x2B };
@@ -460,16 +479,17 @@ void Cmd_2B(void) {
 }
 
 /**
- * 设置 空闲关机时长
- *
- * @param idleToPowerOffTime 当串口没有通信且蓝牙在广播中，连续计时达到这么多个10分钟则关机  0=不关机
- */
+  * 设置 空闲关机时长
+  *
+  * @param idleToPowerOffTime 当串口没有通信且蓝牙在广播中，连续计时达到这么多个10分钟则关机  0=不关机
+  */
 void Cmd_2C(U8 idleToPowerOffTime) {
   U8 buf[2] = { 0x2C };
   buf[1] = idleToPowerOffTime;
   Dbp("\r\nset idleToPowerOffTime--\r\n");
   Cmd_PackAndTx(buf, 2);
 }
+
 // 读取 空闲关机时长
 void Cmd_2D(void) {
   U8 buf[1] = { 0x2D };
@@ -478,16 +498,17 @@ void Cmd_2D(void) {
 }
 
 /**
- * 设置 禁止蓝牙方式更改名称和充电参数 标识
- *
- * @param DisableBleSetNameAndCahrge 1=禁止通过蓝牙更改名称及充电参数 0=允许(默认) 可能客户的产品不想让别人用蓝牙随便改，设为1即可
- */
+  * 设置 禁止蓝牙方式更改名称和充电参数 标识
+  *
+  * @param DisableBleSetNameAndCahrge 1=禁止通过蓝牙更改名称及充电参数 0=允许(默认) 可能客户的产品不想让别人用蓝牙随便改，设为1即可
+  */
 void Cmd_2E(U8 DisableBleSetNameAndCahrge) {
   U8 buf[2] = { 0x2E };
   buf[1] = (DisableBleSetNameAndCahrge <= 1) ? DisableBleSetNameAndCahrge : 1;
   Dbp("\r\nset FlagForDisableBleSetNameAndCahrge--\r\n");
   Cmd_PackAndTx(buf, 2);
 }
+
 // 读取 禁止蓝牙方式更改名称和充电参数 标识
 void Cmd_2F(void) {
   U8 buf[1] = { 0x2F };
@@ -496,16 +517,17 @@ void Cmd_2F(void) {
 }
 
 /**
- * 设置 串口通信地址
- *
- * @param address 设备地址只能设置为0-254
- */
+  * 设置 串口通信地址
+  *
+  * @param address 设备地址只能设置为0-254
+  */
 void Cmd_30(U8 address) {
   U8 buf[2] = { 0x30 };
   buf[1] = (address <= 254) ? address : 254;
   Dbp("\r\nset address--\r\n");
   Cmd_PackAndTx(buf, 2);
 }
+
 // 读取 串口通信地址
 void Cmd_31(void) {
   U8 buf[1] = { 0x31 };
@@ -514,11 +536,11 @@ void Cmd_31(void) {
 }
 
 /**
- * 设置 加速计和陀螺仪量程
- *
- * @param AccRange  目标加速度量程 0=2g 1=4g 2=8g 3=16g
- * @param GyroRange 目标陀螺仪量程 0=256 1=512 2=1024 3=2048
- */
+  * 设置 加速计和陀螺仪量程
+  *
+  * @param AccRange  目标加速度量程 0=2g 1=4g 2=8g 3=16g
+  * @param GyroRange 目标陀螺仪量程 0=256 1=512 2=1024 3=2048
+  */
 void Cmd_33(U8 AccRange, U8 GyroRange) {
   U8 buf[3] = { 0x33 };
   buf[1] = (AccRange <= 3) ? AccRange : 3;
@@ -526,6 +548,7 @@ void Cmd_33(U8 AccRange, U8 GyroRange) {
   Dbp("\r\nset accelRange and gyroRange--\r\n");
   Cmd_PackAndTx(buf, 3);
 }
+
 // 读取 加速计和陀螺仪量程
 void Cmd_34(void) {
   U8 buf[1] = { 0x34 };
@@ -534,16 +557,17 @@ void Cmd_34(void) {
 }
 
 /**
- * 设置 陀螺仪自动校正标识
- *
- * @param GyroAutoFlag  1=陀螺仪自动校正灵敏度开  0=关
- */
+  * 设置 陀螺仪自动校正标识
+  *
+  * @param GyroAutoFlag  1=陀螺仪自动校正灵敏度开  0=关
+  */
 void Cmd_35(U8 GyroAutoFlag) {
   U8 buf[2] = { 0x35 };
   buf[1] = (GyroAutoFlag > 0) ? 1 : 0;
   Dbp("\r\nset GyroAutoFlag--\r\n");
   Cmd_PackAndTx(buf, 2);
 }
+
 // 读取 加速计和陀螺仪量程
 void Cmd_36(void) {
   U8 buf[1] = { 0x36 };
@@ -552,16 +576,17 @@ void Cmd_36(void) {
 }
 
 /**
- * 设置 静止节能模式的触发时长
- *
- * @param EcoTime_10s 该值大于0，则开启自动节能模式(即传感器睡眠后不主动上报，或静止EcoTime_10s个10秒自动进入运动监测模式且暂停主动上报)  0=不启用自动节能
- */
+  * 设置 静止节能模式的触发时长
+  *
+  * @param EcoTime_10s 该值大于0，则开启自动节能模式(即传感器睡眠后不主动上报，或静止EcoTime_10s个10秒自动进入运动监测模式且暂停主动上报)  0=不启用自动节能
+  */
 void Cmd_37(U8 EcoTime_10s) {
   U8 buf[2] = { 0x37 };
   buf[1] = EcoTime_10s;
   Dbp("\r\nset EcoTime_10s--\r\n");
   Cmd_PackAndTx(buf, 2);
 }
+
 // 读取 加速计和陀螺仪量程
 void Cmd_38(void) {
   U8 buf[1] = { 0x38 };
@@ -570,9 +595,9 @@ void Cmd_38(void) {
 }
 
 /**
- * 设置 Z轴角度为指定值
- * @param val 要设置的角度值(单位0.001°)有符号32位数
- */
+  * 设置 Z轴角度为指定值
+  * @param val 要设置的角度值(单位0.001°)有符号32位数
+  */
 void Cmd_28(S32 val) {
   U8 buf[5] = { 0x28 };
   buf[1] = (U8)(val & 0xFF);
@@ -584,16 +609,17 @@ void Cmd_28(S32 val) {
 }
 
 /**
- * 设置 开机后工作模式
- *
- * @param Flag 取值2=开机时载入配置参数并开启串口主动上报，1=开机时载入配置参数但串口不主动上报, 0=不载入且串口不主动上报
- */
+  * 设置 开机后工作模式
+  *
+  * @param Flag 取值2=开机时载入配置参数并开启串口主动上报，1=开机时载入配置参数但串口不主动上报, 0=不载入且串口不主动上报
+  */
 void Cmd_40(U8 Flag) {
   U8 buf[2] = { 0x40 };
   buf[1] = Flag;
   Dbp("\r\nset WorkMode--\r\n");
   Cmd_PackAndTx(buf, 2);
 }
+
 // 读取 开机后工作模式
 void Cmd_41(void) {
   U8 buf[1] = { 0x41 };
@@ -602,10 +628,10 @@ void Cmd_41(void) {
 }
 
 /**
- * 设置 当前高度为指定值
- *
- * @param val 要设置的高度值 单位为mm
- */
+  * 设置 当前高度为指定值
+  *
+  * @param val 要设置的高度值 单位为mm
+  */
 void Cmd_42(S32 val) {
   U8 buf[5] = { 0x42 };
   buf[1] = (U8)(val & 0xFF);
@@ -617,16 +643,17 @@ void Cmd_42(S32 val) {
 }
 
 /**
- * 设置 自动补偿高度标识
- *
- * @param OnOff 0=关闭 1=开启
- */
+  * 设置 自动补偿高度标识
+  *
+  * @param OnOff 0=关闭 1=开启
+  */
 void Cmd_43(U8 OnOff) {
   U8 buf[2] = { 0x43 };
   buf[1] = OnOff;
   Dbp("\r\nset HeightAutoFlag--\r\n");
   Cmd_PackAndTx(buf, 2);
 }
+
 // 读取 自动补偿高度标识
 void Cmd_44(void) {
   U8 buf[1] = { 0x44 };
@@ -635,16 +662,17 @@ void Cmd_44(void) {
 }
 
 /**
- * 设置 串口波特率
- *
- * @param BaudRate 目标波特率 0=9600 1=115200 2=230400 3=460800
- */
+  * 设置 串口波特率
+  *
+  * @param BaudRate 目标波特率 0=9600 1=115200 2=230400 3=460800
+  */
 void Cmd_47(U8 BaudRate) {
   U8 buf[2] = { 0x47 };
   buf[1] = BaudRate;
   Dbp("\r\nset BaudRate--\r\n");
   Cmd_PackAndTx(buf, 2);
 }
+
 // 读取 串口波特率
 void Cmd_48(void) {
   U8 buf[1] = { 0x48 };
@@ -660,11 +688,11 @@ void Cmd_49(void) {
 }
 
 /**
- * 数据透传
- *
- * @param TxBuf 要透传的数据
- * @param TxLen 字节数 必须小于CmdPacketMaxDatSizeTx
- */
+  * 数据透传
+  *
+  * @param TxBuf 要透传的数据
+  * @param TxLen 字节数 必须小于CmdPacketMaxDatSizeTx
+  */
 void Cmd_50(U8 *TxBuf, U8 TxLen) {
   U8 buf[CmdPacketMaxDatSizeTx] = { 0x50 };
   if (TxLen >= CmdPacketMaxDatSizeTx) {  // 太长了，不传输
@@ -676,10 +704,10 @@ void Cmd_50(U8 *TxBuf, U8 TxLen) {
 }
 
 /**
- * 设置 是否上传总圈数并清零
- *
- * @param isReportCycle 0=传输欧拉角数据, 1=用总圈数代替欧拉角传输 并清零圈数
- */
+  * 设置 是否上传总圈数并清零
+  *
+  * @param isReportCycle 0=传输欧拉角数据, 1=用总圈数代替欧拉角传输 并清零圈数
+  */
 void Cmd_51(U8 isReportCycle) {
   U8 buf[3] = { 0x51 };
   if (isReportCycle) {
@@ -697,11 +725,12 @@ void Cmd_51(U8 isReportCycle) {
 F32 AngleX, AngleY, AngleZ;     // 从Cmd_RxUnpack中获取到的欧拉角数据更新到全局变量以便用户自己的业务逻辑使用, 若还需要其它数据，可参考进行增加即可
 F32 OffsetX, OffsetY, OffsetZ;  // 从Cmd_RxUnpack中获取到的空间位移数据更新到全局变量
 U8 isNewData = 0;               // 1=更新了新的数据到全局变量里了
+
 /**
- * 解析接收到报文的数据体并处理，用户根据项目需求，关注里面对应的内容即可--------------------
- * @param pDat 要解析的数据体
- * @param DLen 数据体的长度
- */
+  * 解析接收到报文的数据体并处理，用户根据项目需求，关注里面对应的内容即可--------------------
+  * @param pDat 要解析的数据体
+  * @param DLen 数据体的长度
+  */
 static void Cmd_RxUnpack(U8 *buf, U8 DLen) {
   U16 ctl;
   U8 L;
@@ -1056,10 +1085,10 @@ static void Cmd_RxUnpack(U8 *buf, U8 DLen) {
 }
 
 /**
- * 发送数据  需要用户实现里面的串口发送数据方法-------------------------------------
- * @param pBuf 要发送的内容指针
- * @param Len 要发送的字节数
- */
+  * 发送数据  需要用户实现里面的串口发送数据方法
+  * @param pBuf 要发送的内容指针
+  * @param Len 要发送的字节数
+  */
 static void Cmd_Write(U8 *pBuf, int Len) {
   IMU900Serial.write(pBuf, Len);  // 通过该函数发送通信数据流
 
@@ -1068,18 +1097,7 @@ static void Cmd_Write(U8 *pBuf, int Len) {
              pBuf, Len);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-// ======================================测试示例==============================================
+// ==================== 测试示例 ==================== 
 U8 im948_ctl = 0;  // 用户调试口发来的1字节操作指令 调试口收到的数据赋值给im948_ctl 主循环里调用 im948_test() 进行演示
 void im948_test(void) {
   U8 ctl = im948_ctl;
@@ -1111,18 +1129,18 @@ void im948_test(void) {
       break;
     case '7':  // 7 设置设备参数(内容1)
       /**
-         * 设置设备参数
-         * @param accStill    惯导-静止状态加速度阀值 单位dm/s?
-         * @param stillToZero 惯导-静止归零速度(单位cm/s) 0:不归零 255:立即归零
-         * @param moveToZero  惯导-动态归零速度(单位cm/s) 0:不归零
-         * @param isCompassOn 1=需开启磁场 0=需关闭磁场
-         * @param barometerFilter 气压计的滤波等级[取值0-3],数值越大越平稳但实时性越差
-         * @param reportHz 数据主动上报的传输帧率[取值0-250HZ], 0表示0.5HZ
-         * @param gyroFilter    陀螺仪滤波系数[取值0-2],数值越大越平稳但实时性越差
-         * @param accFilter     加速计滤波系数[取值0-4],数值越大越平稳但实时性越差
-         * @param compassFilter 磁力计滤波系数[取值0-9],数值越大越平稳但实时性越差
-         * @param Cmd_ReportTag 功能订阅标识
-         */
+        * 设置设备参数
+        * @param accStill    惯导-静止状态加速度阀值 单位dm/s?
+        * @param stillToZero 惯导-静止归零速度(单位cm/s) 0:不归零 255:立即归零
+        * @param moveToZero  惯导-动态归零速度(单位cm/s) 0:不归零
+        * @param isCompassOn 1=需开启磁场 0=需关闭磁场
+        * @param barometerFilter 气压计的滤波等级[取值0-3],数值越大越平稳但实时性越差
+        * @param reportHz 数据主动上报的传输帧率[取值0-250HZ], 0表示0.5HZ
+        * @param gyroFilter    陀螺仪滤波系数[取值0-2],数值越大越平稳但实时性越差
+        * @param accFilter     加速计滤波系数[取值0-4],数值越大越平稳但实时性越差
+        * @param compassFilter 磁力计滤波系数[取值0-9],数值越大越平稳但实时性越差
+        * @param Cmd_ReportTag 功能订阅标识
+        */
       Cmd_12(5, 0, 0, 1, 3, 2, 2, 4, 9, 0xFFFF);
       break;
     case '8':  // 8 设置设备参数(内容2)
@@ -1149,38 +1167,38 @@ void im948_test(void) {
 
     case 'e':  // e 加速计高精度校准 开始
       /**
-         * 加速计高精度校准
-         * @param flag 若模块未处于校准状态时：
-         *                 值0 表示请求开始一次校准并采集1个数据
-         *                 值255 表示询问设备是否正在校准
-         *             若模块正在校准中:
-         *                 值1 表示要采集下1个数据
-         *                 值255 表示要采集最后1个数据并结束
-         */
+        * 加速计高精度校准
+        * @param flag 若模块未处于校准状态时：
+        *                 值0 表示请求开始一次校准并采集1个数据
+        *                 值255 表示询问设备是否正在校准
+        *             若模块正在校准中:
+        *                 值1 表示要采集下1个数据
+        *                 值255 表示要采集最后1个数据并结束
+        */
       Cmd_17(0);
       break;
     case 'f':  // f 加速计高精度校准 采集1个点 请最少采集6个静止面的点
       /**
-         * 加速计高精度校准
-         * @param flag 若模块未处于校准状态时：
-         *                 值0 表示请求开始一次校准并采集1个数据
-         *                 值255 表示询问设备是否正在校准
-         *             若模块正在校准中:
-         *                 值1 表示要采集下1个数据
-         *                 值255 表示要采集最后1个数据并结束
-         */
+        * 加速计高精度校准
+        * @param flag 若模块未处于校准状态时：
+        *                 值0 表示请求开始一次校准并采集1个数据
+        *                 值255 表示询问设备是否正在校准
+        *             若模块正在校准中:
+        *                 值1 表示要采集下1个数据
+        *                 值255 表示要采集最后1个数据并结束
+        */
       Cmd_17(1);
       break;
     case 'g':  // g 加速计高精度校准 采集最后1个数据并结束 或询问设备是否正在校准
       /**
-         * 加速计高精度校准
-         * @param flag 若模块未处于校准状态时：
-         *                 值0 表示请求开始一次校准并采集1个数据
-         *                 值255 表示询问设备是否正在校准
-         *             若模块正在校准中:
-         *                 值1 表示要采集下1个数据
-         *                 值255 表示要采集最后1个数据并结束
-         */
+        * 加速计高精度校准
+        * @param flag 若模块未处于校准状态时：
+        *                 值0 表示请求开始一次校准并采集1个数据
+        *                 值255 表示询问设备是否正在校准
+        *             若模块正在校准中:
+        *                 值1 表示要采集下1个数据
+        *                 值255 表示要采集最后1个数据并结束
+        */
       Cmd_17(255);
       break;
     case 'H':  // H 开始磁力计校准
@@ -1302,7 +1320,7 @@ void im948_test(void) {
       break;
 
     case 'J':        // J 设置加速计和陀螺仪量程
-                     /**
+      /**
         * 设置 加速计和陀螺仪量程
         * @param AccRange  目标加速度量程 0=2g 1=4g 2=8g 3=16g
         * @param GyroRange 目标陀螺仪量程 0=256 1=512 2=1024 3=2048

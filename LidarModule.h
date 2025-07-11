@@ -1,9 +1,7 @@
 #ifndef LIDAR_MODULE_H
 #define LIDAR_MODULE_H
 
-// 内部缓冲区
-// RPLidar legacy 测量节点：6 byte = 0 sync+quality，1 quality+flags，2 angle LSB，3 angle MSB，4 dist LSB，5 dist MSB
-static uint8_t buf[6];
+static uint8_t buf[6];  // 内部缓冲区: 0 sync+quality，1 quality+flags，2 angle LSB，3 angle MSB，4 dist LSB，5 dist MSB
 static uint8_t idx = 0;
 
 // 雷达初始化
@@ -12,7 +10,7 @@ void initLidar() {
   LidarSerial.begin(460800);
 
   Serial.println(F("发送雷达启动命令..."));
-  const uint8_t startCmd[] = { 0xA5, 0x20 };  // Express/Normal scan
+  const uint8_t startCmd[] = { 0xA5, 0x20 };  
   LidarSerial.write(startCmd, sizeof(startCmd));
   LidarSerial.flush();
 
@@ -54,13 +52,14 @@ inline void readAndSendLidar() {
     Serial.print(distance, 2);  // 两位小数
     Serial.print(F(",Q:"));
     Serial.println(quality);
-    // 蓝牙输出 
-    BTSerial.print(F("LIDAR:"));
-    BTSerial.print(angle, 1);  // 一位小数
-    BTSerial.print(',');
-    BTSerial.print(distance, 2);  // 两位小数
-    BTSerial.print(F(",Q:"));
-    BTSerial.println(quality);
+
+    // // 蓝牙输出 
+    // BTSerial.print(F("LIDAR:"));
+    // BTSerial.print(angle, 1);  // 一位小数
+    // BTSerial.print(',');
+    // BTSerial.print(distance, 2);  // 两位小数
+    // BTSerial.print(F(",Q:"));
+    // BTSerial.println(quality);
   }
 }
 
