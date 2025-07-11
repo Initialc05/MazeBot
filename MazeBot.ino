@@ -1,29 +1,28 @@
 #include <Arduino.h>
-#include <Wire.h>
 #include <STM32FreeRTOS.h>
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
 #include <PID_v1.h>
 
-// 蓝牙串口
-HardwareSerial BTSerial(PA1, PA0); 
+HardwareSerial BTSerial(PA1, PA0);  // 蓝牙串口
+HardwareSerial IMU900Serial(PA10, PB6);  // IMU900串口
+HardwareSerial LidarSerial(PD2, PC12);  // 雷达串口
 
 // 功能定义模块
-#include "IMUFilterModule.h"
+#include "im948_CMD.h"
 #include "LidarModule.h"
 #include "EncoderModule.h"
 #include "MotorControl.h"
 
-// 测试测试模块（测试模块的函数定义在自己的头文件里）
-#include "MotorTestTask.h"
-#include "EncoderTestTask.h"
+// 测试模块
+#include "TestModule/MotorTestTask.h"
+#include "TestModule/EncoderTestTask.h"
 
-// IMU 任务
-void IMUTask(void *pvParameters) {
-  Serial.println("IMU 任务启动");
+// IMU900任务
+void IMU900Task(void *pvParam)
+{
+  
   while (1) {
-    updateIMUWithFilter();
-    vTaskDelay(pdMS_TO_TICKS(500));
+    updateIMU900();
+    vTaskDelay(pdMS_TO_TICKS(2));
   }
 }
 
@@ -31,7 +30,7 @@ void IMUTask(void *pvParameters) {
 void LidarTask(void *pvParameters) {
   while (1) {
     readAndSendLidar();
-    vTaskDelay(pdMS_TO_TICKS(500));  // 控制雷达任务频率
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
@@ -55,34 +54,30 @@ void CommandTask(void *pvParameters) {
 // 电机控制任务
 void MotorControlTask(void *pvParameters) {
   while (1) {
-    // updateMotorControl();   // 使用PID控制
-    updateMotorControlWithoutPID(); // 开环控制
-
-    vTaskDelay(pdMS_TO_TICKS(100));
+    updateMotorControl();           // 使用PID控制
+    updateMotorControlWithoutPID();   // 开环控制
+    vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
 
-void setup() { 
-  pinMode(LEFT_ENC_B, INPUT_PULLUP);
+void setup() {
+  Serial.begin(115200);
+  IMU900Serial.begin(115200);
+  BTSerial.begin(9600);     // 目前会和IM900冲突,需要更改引脚
+  
+  Serial.println("MazeBot初始化开始...");
 
-  Wire.begin(PB8, PB9);  // I2C用于MPU
-  Serial.begin(115200);  // 调试串口
-
-  // 初始化蓝牙串口
-  BTSerial.begin(9600);
-
-  // 初始化功能模块
+  initIMU900();
   initLidar();
-  initIMU();
   initMotors();
   initEncoders();
-
+  initPID();
+  
   // 启动任务
-  xTaskCreate(IMUTask, "IMU", 4096, NULL, 1, NULL);
+  xTaskCreate(IMU900Task, "IMU900", 2048, NULL, 3, NULL);
   xTaskCreate(LidarTask, "LIDAR", 2048, NULL, 3, NULL);
-  xTaskCreate(OdomPrintTask, "Odom1D", 4096, NULL, 1, NULL);         
-  xTaskCreate(CommandTask, "CMD", 512, NULL, 1, NULL);              // 启用蓝牙控制任务
-  xTaskCreate(MotorControlTask, "MotorCtrl", 1024, NULL, 2, NULL);  // 启用电机控制任务
+  xTaskCreate(CommandTask, "CMD", 512, NULL, 1, NULL);              
+  xTaskCreate(MotorControlTask, "MotorCtrl", 1024, NULL, 2, NULL); 
 
   // 启动测试任务（验收时烧录的程序所有 Test 模块要注释掉）
   //xTaskCreate(EncoderTestTask, "EncoderTest", 512, NULL, 1, NULL);
@@ -91,6 +86,4 @@ void setup() {
   vTaskStartScheduler();
 }
 
-void loop() {
-  // FreeRTOS控制下，不使用loop但要定义和留空
-}
+void loop() {}

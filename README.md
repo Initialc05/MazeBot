@@ -64,10 +64,14 @@ MazeBot下位机由STM32主控板、电机驱动、编码器、IMU、雷达、�
 | 左轮编码器 E1B     | LEFT_ENC_B  | PB5              | 编码器B相                  |
 | 右轮编码器 E2A     | RIGHT_ENC_A | PA8              | 编码器A相                  |
 | 右轮编码器 E2B     | RIGHT_ENC_B | PA9              | 编码器B相                  |
-| IMU电源            | VCC         | 3.3V             |                            |
-| IMU地线            | GND         | GND              |                            |
-| IMU I2C SCL        | SCL         | PB8              | I2C时钟线                  |
-| IMU I2C SDA        | SDA         | PB9              | I2C数据线                  |
+| IMU6050电源       | VCC         | 3.3V             |                            |
+| IMU6050地线       | GND         | GND              |                            |
+| IMU6050 I2C       | SCL         | PB8              | I2C时钟线                  |
+| IMU6050 I2C       | SDA         | PB9              | I2C数据线                  |
+| IMU900电源        | VCC         | 5V                |                           |
+| IMU900地线        | GND         | GND               |                            |
+| IMU900 TX         | TX          | PA10              | UART_1 RX                 |
+| IMU900 RX         | RX          | PB6               | UART_1 TX                 |
 | 雷达电源           | VCC         | 5V               |                            |
 | 雷达地线           | GND         | GND              |                            |
 | 雷达串口TX         | TX          | PD2              | UART_5 RX                  |

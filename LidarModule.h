@@ -1,24 +1,20 @@
 #ifndef LIDAR_MODULE_H
 #define LIDAR_MODULE_H
 
-// 雷达串口
-HardwareSerial Serial5(PD2, PC12);  // TX, Rx
-
 // 内部缓冲区
-// RPLidar legacy 测量节点：6 byte =
-// 0 sync+quality，1 quality+flags，2 angle LSB，3 angle MSB，4 dist LSB，5 dist MSB
+// RPLidar legacy 测量节点：6 byte = 0 sync+quality，1 quality+flags，2 angle LSB，3 angle MSB，4 dist LSB，5 dist MSB
 static uint8_t buf[6];
 static uint8_t idx = 0;
 
 // 雷达初始化
 void initLidar() {
   Serial.begin(115200);
-  Serial5.begin(460800);
+  LidarSerial.begin(460800);
 
   Serial.println(F("发送雷达启动命令..."));
   const uint8_t startCmd[] = { 0xA5, 0x20 };  // Express/Normal scan
-  Serial5.write(startCmd, sizeof(startCmd));
-  Serial5.flush();
+  LidarSerial.write(startCmd, sizeof(startCmd));
+  LidarSerial.flush();
 
   delay(3000);  // 等雷达自检
   Serial.println(F("雷达启动完毕"));
@@ -26,8 +22,8 @@ void initLidar() {
 
 // 数据读取
 inline void readAndSendLidar() {
-  while (Serial5.available()) {
-    uint8_t b = Serial5.read();
+  while (LidarSerial.available()) {
+    uint8_t b = LidarSerial.read();
 
     // Step-1：同步字节（bit7 与 bit0 同为 1）
     if (idx == 0) {
@@ -53,14 +49,14 @@ inline void readAndSendLidar() {
 
     // 串口输出
     Serial.print(F("LIDAR:"));
-    Serial.print(angle, 1);  // 一位小数即可
+    Serial.print(angle, 1);  // 一位小数
     Serial.print(',');
     Serial.print(distance, 2);  // 两位小数
     Serial.print(F(",Q:"));
     Serial.println(quality);
     // 蓝牙输出 
     BTSerial.print(F("LIDAR:"));
-    BTSerial.print(angle, 1);  // 一位小数即可
+    BTSerial.print(angle, 1);  // 一位小数
     BTSerial.print(',');
     BTSerial.print(distance, 2);  // 两位小数
     BTSerial.print(F(",Q:"));
