@@ -28,23 +28,9 @@ MazeBot/
 
 ---
 
-## 3. FreeRTOS 任务拓扑
+## 3. FreeRTOS 任务拓扑图
 
-```mermaid
-graph TD
-  A[IMU900Task 2 ms] -->|Angle / Odom| D[MotorControlTask 20 ms]
-  B[LidarTask 10 ms] -->|点云| E[BTSerial]
-  C[CommandTask 20 ms] --> D
-  C -->|指令| E
-  subgraph Drivers
-    F[IMU900Serial@115200]
-    G[LidarSerial@460800]
-    H[BTSerial@9600]
-  end
-  F --> A
-  G --> B
-  H --> C
-```
+![任务拓扑图](./任务拓扑图.svg)
 
 各任务创建于 `setup()` 后立即启动；`loop()` 保持空函数，由调度器接管调度。
 
