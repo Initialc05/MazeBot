@@ -28,7 +28,7 @@ MazeBot/
 
 ## 3. FreeRTOS 任务拓扑
 
-![FreeRTOS 任务拓扑 V3.0](./FreeRTOS 任务拓扑 V3.0.png)
+![FreeRTOS 任务拓扑 V3.0](./FreeRTOS%20任务拓扑%20V3.0.png)
 
 各任务创建于 `setup()` 后立即启动；`loop()` 保持空函数，由调度器接管调度。
 
