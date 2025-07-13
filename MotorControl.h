@@ -22,7 +22,8 @@
 #define KV_D 0.1
 
 // 直线运动基础占空比
-#define BASE_DUTY 50  // 0-100
+#define STRAIGHT_BASE_DUTY 50  // 0-100
+#define ROTATE_BASE_DUTY 30    // 0-100
 
 // 全局状态
 unsigned long lastCommandTime = 0;
@@ -36,7 +37,35 @@ int leftDir = -1;   // 正转
 int rightDir = -1;  // 反转
 
 // 连续运动标志
-static bool continuousCommand = false;  // 大写W/S触发，免超时
+static bool continuousCommand = false;  // 大写W/S/A/D触发，免超时
+
+// 供 startTurnTo 使用
+static inline float yawError(float current, float target);
+void processBluetoothCommand(char cmd);
+
+static bool autoTurnActive = false;
+static float autoTurnTarget = 0.0f;       // 目标航向角(deg)
+static const float TURN_THRESHOLD = 2.0f; // 允许误差
+static float prevTurnErr = 999.0f;
+
+// 开始自动转向到绝对角度(单位deg, -180 ~ 180)
+inline void startTurnTo(float targetDeg) {
+  // 归一化到[-180,180]
+  while (targetDeg > 180.0f) targetDeg -= 360.0f;
+  while (targetDeg < -180.0f) targetDeg += 360.0f;
+
+  autoTurnTarget = targetDeg;
+  autoTurnActive = true;
+  prevTurnErr = yawError(AngleZ, autoTurnTarget);  // 初始化误差
+
+  // 选择转向方向并发起持续转向指令
+  float err = yawError(AngleZ, autoTurnTarget);
+  if (err > 0) {
+    processBluetoothCommand('A');  // 持续左转
+  } else {
+    processBluetoothCommand('D');  // 持续右转
+  }
+}
 
 // PID相关全局变量
 static long prevLeftTicks = 0;
@@ -173,19 +202,19 @@ void updateMotorControlWithoutPID() {
   switch (currentCommand) {
     case 'w':  // 前进
       hardBrake();
-      setMotor(BASE_DUTY, BASE_DUTY, 1, 1);
+      setMotor(STRAIGHT_BASE_DUTY, STRAIGHT_BASE_DUTY, 1, 1);
       break;
     case 's':  // 后退
       hardBrake();
-      setMotor(BASE_DUTY, BASE_DUTY, -1, -1);
+      setMotor(STRAIGHT_BASE_DUTY, STRAIGHT_BASE_DUTY, -1, -1);
       break;
     case 'a':  // 左转
       hardBrake();
-      setMotor(BASE_DUTY, BASE_DUTY, -1, 1);
+      setMotor(ROTATE_BASE_DUTY, ROTATE_BASE_DUTY, -1, 1);
       break;
     case 'd':  // 右转
       hardBrake();
-      setMotor(BASE_DUTY, BASE_DUTY, 1, -1);
+      setMotor(ROTATE_BASE_DUTY, ROTATE_BASE_DUTY, 1, -1);
       break;
     default:  // 任何未知情况，抱死
       hardBrake();
@@ -245,8 +274,8 @@ void updateMotorControl() {
 
     double dutyCorr = velDiffOutput * motionDir;   // 后退补偿方向
 
-    double lDuty = BASE_DUTY - dutyCorr / 2.0;
-    double rDuty = BASE_DUTY + dutyCorr / 2.0;
+    double lDuty = STRAIGHT_BASE_DUTY - dutyCorr / 2.0;
+    double rDuty = STRAIGHT_BASE_DUTY + dutyCorr / 2.0;
     lDuty = constrain(static_cast<int>(round(lDuty)), 0, 100);
     rDuty = constrain(static_cast<int>(round(rDuty)), 0, 100);
 
@@ -270,7 +299,7 @@ void updateMotorControl() {
   int turnDir = (cmdLower == 'a') ? -1 : 1;  // -1=左转, 1=右转 (符号即左轮方向)
 
   // 简单开环差速
-  setMotor(BASE_DUTY, BASE_DUTY, turnDir, -turnDir);
+  setMotor(ROTATE_BASE_DUTY, ROTATE_BASE_DUTY, turnDir, -turnDir);
 
   // 调试
   Serial.print(F("[转向] LeftDir:"));
@@ -278,7 +307,22 @@ void updateMotorControl() {
   Serial.print(F(" RightDir:"));
   Serial.print(-turnDir);
   Serial.print(F(" Duty:"));
-  Serial.println(BASE_DUTY);
+  Serial.println(ROTATE_BASE_DUTY);
+
+  // 自动转向判定
+  if (autoTurnActive) {
+    float e = yawError(AngleZ, autoTurnTarget);
+    // 若已跨过目标或进入阈值
+    if (fabs(e) <= TURN_THRESHOLD || (prevTurnErr * e < 0)) {
+      hardBrake();
+      autoTurnActive = false;
+      continuousCommand = false;
+      commandActive = false;
+      currentCommand = 'x';
+      Serial.println(F("AutoTurn reached target, brake"));
+    }
+    prevTurnErr = e;
+  }
 
   return;  // 转向模式结束
 }

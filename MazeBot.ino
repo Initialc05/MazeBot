@@ -38,10 +38,47 @@ void CommandTask(void *pvParameters) {
   while (1) {
     // 检查是否有新的蓝牙指令
     if (BTSerial.available()) {
-      char cmd = BTSerial.read();
-      Serial.print("收到蓝牙指令: ");
-      Serial.println(cmd);
-      processBluetoothCommand(cmd);
+      char ch = BTSerial.read();
+
+      // 若第一字符为字母，尝试读取后续数字形成复合指令
+      if (isalpha(ch)) {
+        String numStr = "";
+        // 允许可选正负号
+        while (BTSerial.available()) {
+          char c2 = BTSerial.peek();
+          if (isdigit(c2) || c2 == '-' || c2 == '+') {
+            numStr += BTSerial.read();
+          } else {
+            break;
+          }
+        }
+
+        if (numStr.length() > 0) {
+          float val = numStr.toFloat();
+
+          switch (tolower(ch)) {
+            case 'a': {  // 相对左转 val°
+              Serial.print("Relative Left Turn "); Serial.println(val);
+              startTurnTo(AngleZ - val);
+              break;
+            }
+            case 'z': {  // 转到绝对角度 val°
+              Serial.print("Abs Turn to "); Serial.println(val);
+              startTurnTo(val);
+              break;
+            }
+            default:
+              // 未定义复合指令，回退到单字符处理
+              processBluetoothCommand(ch);
+          }
+        } else {
+          // 无数字部分，按单字符处理
+          processBluetoothCommand(ch);
+        }
+      } else {
+        // 非字母，按单字符处理
+        processBluetoothCommand(ch);
+      }
     }
 
     vTaskDelay(pdMS_TO_TICKS(20));

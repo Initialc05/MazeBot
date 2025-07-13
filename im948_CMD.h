@@ -1,7 +1,6 @@
 #ifndef IM948_CMD_h
 #define IM948_CMD_h
 
-#include "Arduino.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <math.h>
