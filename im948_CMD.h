@@ -12,7 +12,7 @@ typedef unsigned short U16;
 typedef signed long S32;
 typedef unsigned long U32;
 typedef float F32;
-#define pow2(x) ((x) * (x))  // 求平方
+#define pow2(x) ((x) * (x))  // 计算平方
 
 // ==================== 传输时转换比例 ==================== 
 #define scaleAccel 0.00478515625f          // 加速度 [-16g~+16g]    9.8*16/32768

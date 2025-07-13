@@ -1,7 +1,8 @@
 #ifndef LIDAR_MODULE_H
 #define LIDAR_MODULE_H
 
-static uint8_t buf[6];  // 内部缓冲区: 0 sync+quality，1 quality+flags，2 angle LSB，3 angle MSB，4 dist LSB，5 dist MSB
+// 内部缓冲区: 0 sync+quality，1 quality+flags，2 angle LSB，3 angle MSB，4 dist LSB，5 dist MSB
+static uint8_t buf[6];  
 static uint8_t idx = 0;
 
 // 雷达初始化
