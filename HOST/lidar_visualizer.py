@@ -39,17 +39,32 @@ PACKET_SIZE = 14  # 数据包大小（雷达+Odom）
 # 地图参数
 MAP_SIZE = 500  # 栅格地图大小 (500x500)
 MAP_RESOLUTION = 0.05  # 每个栅格 5cm
-MAX_RANGE = 3.0  # 最大有效距离 3m
+MAX_RANGE = 3.5  # 最大有效距离 3.5m（与过滤器一致）
+
+# 🔧 雷达距离校准参数
+DISTANCE_SCALE_FACTOR = 0.87    # 距离缩放因子：调整雷达距离与真实世界的比例
+                                # > 1.0: 雷达显示距离放大 (点离中心更远)
+                                # < 1.0: 雷达显示距离缩小 (点离中心更近)
+                                # 例如：1.2 表示雷达距离放大20%
+
+# 🔧 近距离非线性校正参数（修正近距离畸变）
+USE_NONLINEAR_CORRECTION = True     # 是否启用非线性距离校正
+NEAR_DISTANCE_THRESHOLD = 0.5       # 近距离阈值(米)：小于此距离应用校正
+NEAR_CORRECTION_FACTOR = 1.0        # 近距离校正系数：0.85表示近距离缩小15%
+                                    # < 1.0: 近距离点向内收缩（修正外凸）
+                                    # > 1.0: 近距离点向外扩展
+# 平滑过渡参数
+CORRECTION_BLEND_RANGE = 0.3      # 校正混合范围(米)：在阈值附近平滑过渡
 
 UPDATE_INTERVAL_MS = 6         # 可视化更新间隔 (ms) - 越小越实时
-POINTS_PER_FRAME = 10000       # 每帧处理的数据包数量 - 越大处理越快
+POINTS_PER_FRAME = 15000       # 每帧处理的数据包数量 - 增加处理量以获取更多点
 
-# Real-time scan显示模式配置
+# Real-time scan显示模式配置（优化以显示更多点）
 USE_TIME_WINDOW = True         # True=基于时间窗口, False=基于固定点数
-MAX_DISPLAY_TIME = 0.1         # 时间窗口模式：显示最近N秒的点 (100ms = 1圈完整扫描 @ 10Hz)
-MAX_DISPLAY_POINTS = 500       # 固定点数模式：显示最近N个点 (略大于1圈500点，确保完整)
+MAX_DISPLAY_TIME = 0.1         # 时间窗口模式：显示最近N秒的点 (500ms = 5圈扫描，更多点)
+MAX_DISPLAY_POINTS = 2000      # 固定点数模式：显示最近N个点 (增加到2000点)
 
-USE_MOTION_FILTER = True       # 🚀 启用运动预测过滤（智能消除拖尾）
+USE_MOTION_FILTER = False      # 🚀 禁用运动过滤以显示所有点（更完整的环境显示）
 MOTION_THRESHOLD = 0.1         # 运动阈值：点相对机器人移动超过此距离(米)则剔除
 ANGLE_THRESHOLD = 10.0         # 角度阈值：机器人旋转超过此角度(度)则剔除点
 USE_OVERLAP_PROTECTION = True  # 🧠 重合保护：如果历史点和当前扫描重合，则保留
@@ -164,6 +179,45 @@ class ScanBuffer:
         
         return abs(delta)
 
+# ==================== 非线性距离校正函数 ====================
+def apply_nonlinear_distance_correction(distance_m):
+    """
+    应用非线性距离校正，修正近距离畸变
+    
+    原理：
+    - 近距离（< NEAR_DISTANCE_THRESHOLD）：应用校正系数缩小距离
+    - 远距离（> NEAR_DISTANCE_THRESHOLD + BLEND_RANGE）：保持原距离
+    - 中间范围：平滑过渡（余弦插值）
+    
+    Args:
+        distance_m: 原始距离（米）
+    
+    Returns:
+        校正后的距离（米）
+    """
+    if not USE_NONLINEAR_CORRECTION:
+        return distance_m
+    
+    # 近距离：直接应用校正系数
+    if distance_m < NEAR_DISTANCE_THRESHOLD:
+        return distance_m * NEAR_CORRECTION_FACTOR
+    
+    # 远距离：不校正
+    if distance_m > NEAR_DISTANCE_THRESHOLD + CORRECTION_BLEND_RANGE:
+        return distance_m
+    
+    # 中间范围：平滑过渡（余弦插值）
+    # t从0（近距离边界）到1（远距离边界）
+    t = (distance_m - NEAR_DISTANCE_THRESHOLD) / CORRECTION_BLEND_RANGE
+    # 余弦插值：平滑过渡，避免突变
+    smooth_t = (1 - np.cos(t * np.pi)) / 2
+    
+    # 混合近距离校正和原始距离
+    corrected_near = distance_m * NEAR_CORRECTION_FACTOR
+    corrected = corrected_near * (1 - smooth_t) + distance_m * smooth_t
+    
+    return corrected
+
 # ==================== 串口数据接收 ====================
 class SerialReceiver:
     def __init__(self, port, baudrate, mode="USB"):
@@ -266,7 +320,10 @@ class SerialReceiver:
         
         # 转换为实际值
         angle_deg = angle_q8 / 256.0
-        distance_m = distance_mm / 1000.0
+        # 🔧 应用距离校正：先线性缩放，再非线性校正
+        distance_m = distance_mm / 1000.0  # 原始距离（米）
+        distance_m = distance_m * DISTANCE_SCALE_FACTOR  # 线性缩放
+        distance_m = apply_nonlinear_distance_correction(distance_m)  # 非线性校正（修正近距离畸变）
         odom_x_m = odom_x_cm / 100.0
         odom_y_m = odom_y_cm / 100.0
         odom_theta_deg = odom_theta_q8 / 256.0
@@ -750,11 +807,48 @@ class LidarVisualizer:
         self.ax1.set_xlim(-MAX_RANGE, MAX_RANGE)
         self.ax1.set_ylim(-MAX_RANGE, MAX_RANGE)
         self.ax1.set_aspect('equal')
-        self.ax1.grid(True, alpha=0.3)
-        self.ax1.set_title('Real-time Lidar Scan', fontsize=12, pad=10)
+        
+        # 🔧 设置更细的网格：每格10cm (0.1m)
+        # 主刻度：每0.5m显示数字标签（稀疏显示）
+        major_label_ticks = np.arange(-MAX_RANGE, MAX_RANGE + 0.5, 0.5)
+        self.ax1.set_xticks(major_label_ticks)
+        self.ax1.set_yticks(major_label_ticks)
+        
+        # 次刻度：每0.1m（10cm）显示网格线但无标签
+        minor_grid_ticks = np.arange(-MAX_RANGE, MAX_RANGE + 0.1, 0.1)
+        self.ax1.set_xticks(minor_grid_ticks, minor=True)
+        self.ax1.set_yticks(minor_grid_ticks, minor=True)
+        
+        # 更细的次刻度：每0.05m（5cm）显示更细网格线
+        fine_grid_ticks = np.arange(-MAX_RANGE, MAX_RANGE + 0.05, 0.05)
+        
+        # 网格样式设置
+        # 主网格（0.5m间隔）：浅灰色，稍粗
+        self.ax1.grid(True, which='major', alpha=0.5, linewidth=0.8, color='lightgray')
+        # 次网格（0.1m间隔）：浅灰色，细线
+        self.ax1.grid(True, which='minor', alpha=0.3, linewidth=0.4, color='lightgray')
+        
+        # 手动添加更细的5cm网格线
+        for x in fine_grid_ticks:
+            if x not in minor_grid_ticks:  # 避免重复
+                self.ax1.axvline(x, alpha=0.15, linewidth=0.2, color='lightgray', zorder=0)
+        for y in fine_grid_ticks:
+            if y not in minor_grid_ticks:  # 避免重复
+                self.ax1.axhline(y, alpha=0.15, linewidth=0.2, color='lightgray', zorder=0)
+        
+        self.ax1.set_title('Real-time Lidar Scan (Grid: 10cm, Labels: 0.5m)', fontsize=12, pad=10)
         self.ax1.set_xlabel('X (m)', fontsize=10)
         self.ax1.set_ylabel('Y (m)', fontsize=10)
         self.scatter = self.ax1.scatter([], [], s=2, c='blue', alpha=0.6, zorder=15)  # 设置最高图层
+        
+        # 🔴 机器人位置标记（原点红色亮点）
+        self.origin_marker = self.ax1.scatter([0], [0], s=80, c='red', marker='o', 
+                                             edgecolors='white', linewidths=2, 
+                                             alpha=0.9, zorder=20, label='Robot')
+        # 添加十字线标记原点
+        self.ax1.axhline(0, color='red', linewidth=1.5, alpha=0.5, linestyle='-', zorder=19)
+        self.ax1.axvline(0, color='red', linewidth=1.5, alpha=0.5, linestyle='-', zorder=19)
+        self.ax1.legend(loc='upper right', fontsize=9)
         
         # Right: Grid map + Robot trajectory（聚焦到中心区域，减少空白）
         # 显示中心±150格（3米范围，对应±150格 @ 0.05m/格）
@@ -816,7 +910,7 @@ class LidarVisualizer:
         )
         
         # 帮助文本（底部左侧）
-        help_text = "Control: [↑↓←→]Move [Space]Stop | Map: [Ctrl+S]Save [Ctrl+L]List [Ctrl+C]Clear [Ctrl+D]Debug [Ctrl+Q]Quit"
+        help_text = "Distance(Left): [+][−][0] | Control: [↑↓←→]Move [Space]Stop | NearCorrect(Right): [◀][▶][N] | Map: [Ctrl+S]Save [Ctrl+Q]Quit"
         self.fig.text(0.01, 0.01, help_text, ha='left', va='bottom', fontsize=7, color='blue')
         
         # === 精准控制面板（底部中央横向排列） ===
@@ -826,12 +920,32 @@ class LidarVisualizer:
         spacing = 0.005
         
         # 标题
-        self.fig.text(0.5, 0.085, '━━━━ Precise Control ━━━━', ha='center', fontsize=8, 
+        self.fig.text(0.5, 0.085, '━━━━ Precise Control | Distance Calibration | Near Correction ━━━━', ha='center', fontsize=8, 
                      weight='bold', color='darkblue')
         
-        # 计算起始位置（居中对齐）
-        # 总宽度：输入框(0.1) + 发送(0.04) + 间隔 + 8个按钮(0.04*8) + 间隔(0.005*9) = 约0.5
-        start_x = 0.25
+        # 🎨 对称布局：距离校准按钮(左) ←→ 近距离校正按钮(右) 关于中心对称
+        # 左侧：[+][−][0] 距离校准按钮
+        dist_start_x = 0.08  # 左侧起始位置
+        ax_dist_plus = plt.axes([dist_start_x, bottom_y, button_width, button_height])
+        ax_dist_minus = plt.axes([dist_start_x + (button_width + spacing), bottom_y, button_width, button_height])
+        ax_dist_reset = plt.axes([dist_start_x + (button_width + spacing) * 2, bottom_y, button_width, button_height])
+        
+        self.btn_dist_plus = Button(ax_dist_plus, '+', color='lightcoral', hovercolor='red')
+        self.btn_dist_minus = Button(ax_dist_minus, '−', color='lightcyan', hovercolor='cyan')
+        self.btn_dist_reset = Button(ax_dist_reset, '0', color='lightgray', hovercolor='gray')
+        
+        # 距离校准按钮事件绑定
+        self.btn_dist_plus.label.set_fontsize(10)
+        self.btn_dist_plus.on_clicked(lambda event: self.adjust_distance_scale(0.01))
+        
+        self.btn_dist_minus.label.set_fontsize(10)
+        self.btn_dist_minus.on_clicked(lambda event: self.adjust_distance_scale(-0.01))
+        
+        self.btn_dist_reset.label.set_fontsize(9)
+        self.btn_dist_reset.on_clicked(lambda event: self.reset_distance_scale())
+        
+        # 中间：控制面板（输入框 + 运动按钮）
+        start_x = 0.23  # 中间偏左起始位置
         
         # 输入框（指令输入）
         ax_textbox = plt.axes([start_x, bottom_y, 0.1, button_height])
@@ -845,10 +959,8 @@ class LidarVisualizer:
         self.send_btn.label.set_fontsize(8)
         self.send_btn.on_clicked(self.on_send_command)
         
-        # 快捷按钮起始位置
-        btn_start_x = start_x + 0.1 + button_width + spacing * 3
-        
         # 前进距离快捷按钮（横向排列）
+        btn_start_x = start_x + 0.1 + button_width + spacing * 3
         ax_f10 = plt.axes([btn_start_x, bottom_y, button_width, button_height])
         ax_f30 = plt.axes([btn_start_x + (button_width + spacing), bottom_y, button_width, button_height])
         ax_f50 = plt.axes([btn_start_x + (button_width + spacing) * 2, bottom_y, button_width, button_height])
@@ -880,6 +992,27 @@ class LidarVisualizer:
                           (self.btn_r45, 'R45'), (self.btn_r90, 'R90')]:
             btn.label.set_fontsize(7)
             btn.on_clicked(lambda event, cmd=label: self.send_precise_command(cmd))
+        
+        # 右侧：[◀][▶][N] 近距离校正按钮（与左侧距离校准对称）
+        # 计算对称位置：左侧3个按钮占 0.08~0.21，右侧应为 0.79~0.92（关于0.5对称）
+        near_start_x = 0.79  # 右侧位置（与左侧距离校准按钮关于窗口中心完全对称）
+        ax_near_minus = plt.axes([near_start_x, bottom_y, button_width, button_height])
+        ax_near_plus = plt.axes([near_start_x + (button_width + spacing), bottom_y, button_width, button_height])
+        ax_near_toggle = plt.axes([near_start_x + (button_width + spacing) * 2, bottom_y, button_width, button_height])
+        
+        self.btn_near_minus = Button(ax_near_minus, '◀', color='lightpink', hovercolor='pink')
+        self.btn_near_plus = Button(ax_near_plus, '▶', color='lightgreen', hovercolor='green')
+        self.btn_near_toggle = Button(ax_near_toggle, 'N', color='lightyellow', hovercolor='yellow')
+        
+        # 近距离校正按钮事件绑定
+        self.btn_near_minus.label.set_fontsize(9)
+        self.btn_near_minus.on_clicked(lambda event: self.adjust_near_correction(-0.02))
+        
+        self.btn_near_plus.label.set_fontsize(9)
+        self.btn_near_plus.on_clicked(lambda event: self.adjust_near_correction(0.02))
+        
+        self.btn_near_toggle.label.set_fontsize(9)
+        self.btn_near_toggle.on_clicked(lambda event: self.toggle_nonlinear_correction())
         
         # 绑定键盘事件
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
@@ -1015,8 +1148,8 @@ class LidarVisualizer:
                 ry_grid = int(MAP_SIZE / 2 + robot_x / MAP_RESOLUTION)
                 self.lidar_data.robot_pos = (rx_grid, ry_grid)
             
-            # 上位机额外过滤：质量>30, 距离在0.1m-3m之间
-            if quality < 30 or distance > 3.0 or distance < 0.1:
+            # 上位机额外过滤：进一步降低阈值以显示更多点
+            if quality < 8 or distance > 3.5 or distance < 0.05:
                 continue
             
             # 添加点、时间戳和机器人位姿（用于显示）
@@ -1227,9 +1360,10 @@ class LidarVisualizer:
             display_y = imu_x   # 显示Y = IMU_X
             
             # 横向展开显示（显示坐标系，与地图可视化一致）
+            near_status = f"Near:{NEAR_CORRECTION_FACTOR:.2f}{'✓' if USE_NONLINEAR_CORRECTION else '✗'}"
             status = (f"Scans: {self.lidar_data.scan_count} | Points: {points_info}{time_info} | "
                      f"Pos: ({display_x:.2f}, {display_y:.2f})m | Heading: {imu_theta:.1f}° | "
-                     f"Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
+                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
             
             # 多线程模式：显示队列状态和性能统计
             if self.use_multithreading:
@@ -1241,8 +1375,9 @@ class LidarVisualizer:
                 # 添加独立Odom包统计（🚀表示使用高速独立Odom通道）
                 status += f" | Q:{queue_size} Odom:{odom_count} Lidar:{lidar_count} Drop:{drop_count}"
         else:
+            near_status = f"Near:{NEAR_CORRECTION_FACTOR:.2f}{'✓' if USE_NONLINEAR_CORRECTION else '✗'}"
             status = (f"Scans: {self.lidar_data.scan_count} | Points: {points_info}{time_info} | "
-                     f"Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
+                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
         
         self.status_text.set_text(status)
         
@@ -1351,11 +1486,71 @@ class LidarVisualizer:
             print(f"\n🔧 Coordinate transformation debug mode: {status}")
             if self.slam.DEBUG_MODE:
                 print("   Will display: Lidar angle conversion, IMU angle, fused angle")
+        
+        # 🔧 距离缩放因子实时调整
+        elif event.key == '=' or event.key == 'plus':
+            # + (=) key: 增加距离缩放因子
+            self.adjust_distance_scale(0.01)
+            
+        elif event.key == '-' or event.key == 'minus':
+            # - key: 减少距离缩放因子
+            self.adjust_distance_scale(-0.01)
+            
+        elif event.key == '0':
+            # 0 key: 重置距离缩放因子
+            self.reset_distance_scale()
+        
+        # 🔧 近距离非线性校正调整
+        elif event.key == '[':
+            # [ key: 减小近距离校正系数（向内收缩，修正外凸）
+            self.adjust_near_correction(-0.02)
+            
+        elif event.key == ']':
+            # ] key: 增加近距离校正系数（向外扩展）
+            self.adjust_near_correction(0.02)
+            
+        elif event.key == 'n':
+            # N key: 切换非线性校正开关
+            self.toggle_nonlinear_correction()
                 
         elif event.key == 'ctrl+q':
             # Ctrl+Q: Quit
             print("\n👋 Exiting program...")
             plt.close(self.fig)
+    
+    def adjust_distance_scale(self, delta):
+        """调整距离缩放因子"""
+        global DISTANCE_SCALE_FACTOR
+        DISTANCE_SCALE_FACTOR = max(0.1, DISTANCE_SCALE_FACTOR + delta)  # 最小0.1避免负值
+        action = "放大" if delta > 0 else "缩小"
+        sign = "+" if delta > 0 else ""
+        print(f"\n🔧 Distance Scale Factor: {DISTANCE_SCALE_FACTOR:.2f} ({sign}{delta:.2f}) - 雷达距离{action}")
+    
+    def reset_distance_scale(self):
+        """重置距离缩放因子到默认值"""
+        global DISTANCE_SCALE_FACTOR
+        DISTANCE_SCALE_FACTOR = 1.0
+        print(f"\n🔧 Distance Scale Factor: {DISTANCE_SCALE_FACTOR:.2f} (Reset) - 恢复默认比例")
+    
+    def adjust_near_correction(self, delta):
+        """调整近距离校正系数"""
+        global NEAR_CORRECTION_FACTOR
+        NEAR_CORRECTION_FACTOR = max(0.5, min(1.5, NEAR_CORRECTION_FACTOR + delta))  # 限制在0.5-1.5之间
+        action = "向外扩展" if delta > 0 else "向内收缩"
+        sign = "+" if delta > 0 else ""
+        print(f"\n🔧 Near Correction Factor: {NEAR_CORRECTION_FACTOR:.3f} ({sign}{delta:.02f}) - 近距离点{action}")
+        print(f"   当前设置: <{NEAR_DISTANCE_THRESHOLD:.1f}m距离 × {NEAR_CORRECTION_FACTOR:.3f}")
+    
+    def toggle_nonlinear_correction(self):
+        """切换非线性校正开关"""
+        global USE_NONLINEAR_CORRECTION
+        USE_NONLINEAR_CORRECTION = not USE_NONLINEAR_CORRECTION
+        status = "✅ ON" if USE_NONLINEAR_CORRECTION else "❌ OFF"
+        print(f"\n🔧 Nonlinear Distance Correction: {status}")
+        if USE_NONLINEAR_CORRECTION:
+            print(f"   近距离阈值: {NEAR_DISTANCE_THRESHOLD}m")
+            print(f"   校正系数: {NEAR_CORRECTION_FACTOR:.3f}")
+            print(f"   过渡范围: {CORRECTION_BLEND_RANGE}m")
     
     def on_key_release(self, event):
         """Keyboard release event handler"""
@@ -1434,6 +1629,21 @@ def main():
         print("  Ctrl+C  : Clear current map")
         print("  Ctrl+D  : Toggle coordinate debug mode")
         print("  Ctrl+Q  : Quit program")
+        print("\n🔧 Distance Calibration (左侧按钮):")
+        print("  🖱️  GUI Buttons (Bottom Panel - LEFT): [+] [−] [0] - Click to adjust distance scale")
+        print("     + Button : Increase distance scale (+0.01) - 雷达点离中心更远")
+        print("     − Button : Decrease distance scale (-0.01) - 雷达点离中心更近") 
+        print("     0 Button : Reset to default scale (1.0x) - 恢复默认比例")
+        print("  📊 Status   : Current scale shown in top status bar (Scale: x.xxX)")
+        print("  ⌨️  Keyboard : + / = (increase), - (decrease), 0 (reset) keys also work")
+        print("\n🔧 Near-Distance Distortion Correction (右侧按钮 - 非线性畸变校正):")
+        print("  🖱️  GUI Buttons (Bottom Panel - RIGHT): [◀] [▶] [N] - Click to adjust near correction")
+        print("     ◀ Button : Decrease near correction (-0.02) - 近距离点向内收缩（修正外凸）")
+        print("     ▶ Button : Increase near correction (+0.02) - 近距离点向外扩展")
+        print("     N Button : Toggle nonlinear correction ON/OFF - 开关非线性校正")
+        print(f"  💡 Current: {'✅ Enabled' if USE_NONLINEAR_CORRECTION else '❌ Disabled'} | "
+              f"Factor={NEAR_CORRECTION_FACTOR:.3f} | Threshold={NEAR_DISTANCE_THRESHOLD}m")
+        print("  ⌨️  Keyboard : [ (decrease), ] (increase), N (toggle) keys also work")
         print("\n📐 Coordinate System:")
         print("  Lidar: RPLidar C1 (Clockwise positive)")
         print("  IMU:   IM948 (Counter-clockwise positive)")

@@ -29,7 +29,7 @@
 #define KT_D 10.0    // 转向D：增大以抑制震荡
 
 // === 运动速度参数 ===
-#define BASE_DUTY 40        // 直线运动基础占空比 (0-100)
+#define BASE_DUTY 30        // 直线运动基础占空比 (0-100)
 #define TURN_SPEED_MIN 25   // 转向最小占空比
 #define TURN_SPEED_MAX 30   // 转向最大占空比
 

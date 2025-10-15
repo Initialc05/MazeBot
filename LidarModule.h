@@ -185,8 +185,8 @@ void parseLidarNode(rplidar_response_measurement_node_t* node) {
     }
     #endif
     
-    // 过滤无效数据（降低质量阈值以提升建图精度，带宽充足）
-    if (quality < 15 || distance_mm > 3000 || distance_mm < 100) {
+    // 过滤无效数据（进一步降低质量阈值以获取更多点）
+    if (quality < 5 || distance_mm > 3000 || distance_mm < 100) {
         return;  // 过滤低质量点、超出3m范围、以及过近的点（<10cm）
     }
     
