@@ -24,13 +24,13 @@
 #define KV_D 0.1
 
 // 转向环 PID
-#define KT_P 0.5   // 转向P：降低以减少超调
-#define KT_I 0.0   // 转向I：消除稳态误差
-#define KT_D 1.0   // 转向D：增大以抑制震荡
+#define KT_P 0.4    // 转向P：降低以减少超调
+#define KT_I 0.0  // 转向I：消除稳态误差
+#define KT_D 10.0    // 转向D：增大以抑制震荡
 
 // === 运动速度参数 ===
 #define BASE_DUTY 40        // 直线运动基础占空比 (0-100)
-#define TURN_SPEED_MIN 20   // 转向最小占空比
+#define TURN_SPEED_MIN 25   // 转向最小占空比
 #define TURN_SPEED_MAX 30   // 转向最大占空比
 
 // 全局状态 /
@@ -74,7 +74,7 @@ enum TurnState {
 
 static TurnState turnState = TURN_IDLE;
 static float targetTurnAngle = 0.0f;        // 目标绝对角度
-static const float turnTolerance = 8.0f;    // 到达容差（±8度，增大以减少震荡）
+static const float turnTolerance = 5.0f;    // 到达容差（±5度，增大以减少震荡）
 static unsigned long turnStartTime = 0;
 static const unsigned long turnTimeout = 5000;  // 5秒超时
 
