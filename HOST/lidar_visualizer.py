@@ -39,10 +39,10 @@ PACKET_SIZE = 14  # 数据包大小（雷达+Odom）
 # 地图参数
 MAP_SIZE = 500  # 栅格地图大小 (500x500)
 MAP_RESOLUTION = 0.05  # 每个栅格 5cm
-MAX_RANGE = 3.5  # 最大有效距离 3.5m（与过滤器一致）
+MAX_RANGE = 1.5  # 最大有效距离 3.5m（与过滤器一致）
 
 # 🔧 雷达距离校准参数
-DISTANCE_SCALE_FACTOR = 0.87    # 距离缩放因子：调整雷达距离与真实世界的比例
+DISTANCE_SCALE_FACTOR = 0.79    # 距离缩放因子：调整雷达距离与真实世界的比例
                                 # > 1.0: 雷达显示距离放大 (点离中心更远)
                                 # < 1.0: 雷达显示距离缩小 (点离中心更近)
                                 # 例如：1.2 表示雷达距离放大20%
@@ -50,7 +50,7 @@ DISTANCE_SCALE_FACTOR = 0.87    # 距离缩放因子：调整雷达距离与真�
 # 🔧 近距离非线性校正参数（修正近距离畸变）
 USE_NONLINEAR_CORRECTION = True     # 是否启用非线性距离校正
 NEAR_DISTANCE_THRESHOLD = 0.5       # 近距离阈值(米)：小于此距离应用校正
-NEAR_CORRECTION_FACTOR = 1.0        # 近距离校正系数：0.85表示近距离缩小15%
+NEAR_CORRECTION_FACTOR = 0.86        # 近距离校正系数：0.85表示近距离缩小15%
                                     # < 1.0: 近距离点向内收缩（修正外凸）
                                     # > 1.0: 近距离点向外扩展
 # 平滑过渡参数
@@ -663,7 +663,9 @@ class SimpleGridSLAM:
         Args:
             weight: 障碍物累积权重（默认8，实时建图可用更小值如3）
         """
-        if distance_m <= 0 or distance_m > MAX_RANGE:
+        # 🔧 建图距离过滤：丢弃20cm以内和超出MAX_RANGE的点
+        MIN_MAP_DISTANCE = 0.20  # 最小建图距离：20cm
+        if distance_m <= MIN_MAP_DISTANCE or distance_m > MAX_RANGE:
             return
         
         # ========== 坐标系转换 ==========
@@ -1149,7 +1151,7 @@ class LidarVisualizer:
                 self.lidar_data.robot_pos = (rx_grid, ry_grid)
             
             # 上位机额外过滤：进一步降低阈值以显示更多点
-            if quality < 8 or distance > 3.5 or distance < 0.05:
+            if quality < 8 or distance > 1.5 or distance < 0.15:
                 continue
             
             # 添加点、时间戳和机器人位姿（用于显示）

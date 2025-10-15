@@ -186,8 +186,8 @@ void parseLidarNode(rplidar_response_measurement_node_t* node) {
     #endif
     
     // 过滤无效数据（进一步降低质量阈值以获取更多点）
-    if (quality < 5 || distance_mm > 3000 || distance_mm < 100) {
-        return;  // 过滤低质量点、超出3m范围、以及过近的点（<10cm）
+    if (quality < 5 || distance_mm > 3000 || distance_mm < 200) {
+        return;  // 过滤低质量点、超出3m范围、以及过近的点（<20cm）
     }
     
     // 构建蓝牙数据包（雷达 + Odom融合）
