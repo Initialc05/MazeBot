@@ -30,8 +30,8 @@
 
 // === 运动速度参数 ===
 #define BASE_DUTY 40        // 直线运动基础占空比 (0-100)
-#define TURN_SPEED_MIN 25   // 转向最小占空比
-#define TURN_SPEED_MAX 30   // 转向最大占空比
+#define TURN_SPEED_MIN 28   // 转向最小占空比
+#define TURN_SPEED_MAX 32   // 转向最大占空比
 
 // 全局状态 /
 unsigned long lastCommandTime = 0;

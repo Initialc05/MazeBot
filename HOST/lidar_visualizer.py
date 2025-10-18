@@ -1151,7 +1151,7 @@ class LidarVisualizer:
                 self.lidar_data.robot_pos = (rx_grid, ry_grid)
             
             # 上位机额外过滤：进一步降低阈值以显示更多点
-            if quality < 8 or distance > 1.5 or distance < 0.15:
+            if quality < 8 or distance > 1.5 or distance < 0.20:
                 continue
             
             # 添加点、时间戳和机器人位姿（用于显示）
