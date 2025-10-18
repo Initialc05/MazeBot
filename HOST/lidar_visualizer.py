@@ -56,6 +56,18 @@ NEAR_CORRECTION_FACTOR = 0.86        # 近距离校正系数：0.85表示近距�
 # 平滑过渡参数
 CORRECTION_BLEND_RANGE = 0.3      # 校正混合范围(米)：在阈值附近平滑过渡
 
+# 🔧 旋转检测滤波参数（防止旋转时拖尾）
+USE_ROTATION_FILTER = True        # 是否启用旋转检测滤波
+ROTATION_THRESHOLD_DEG_S = 5.0   # 🔧 角速度阈值(度/秒)：更敏感检测旋转
+ROTATION_SMOOTH_WINDOW = 3        # 🔧 平滑窗口：减小以更快响应旋转变化
+ROTATION_FILTER_DELAY = 0.3       # 🔧 滤波延迟(秒)：增加延迟避免旋转停止时误建图
+
+# 🛡️ 墙保护参数（防止真实墙衰减过快）
+WALL_PROTECTION_ENABLED = True    # 是否启用墙保护机制
+HIGH_CONFIDENCE_THRESHOLD = 30   # 高置信度墙阈值（多次观测确认）
+HIGH_CONFIDENCE_EROSION = 0.5    # 高置信度墙侵蚀速度（每次-0.5）
+NORMAL_EROSION = 1.0             # 普通墙侵蚀速度（每次-1.0）
+
 UPDATE_INTERVAL_MS = 6         # 可视化更新间隔 (ms) - 越小越实时
 POINTS_PER_FRAME = 15000       # 每帧处理的数据包数量 - 增加处理量以获取更多点
 
@@ -178,6 +190,104 @@ class ScanBuffer:
             delta += 360
         
         return abs(delta)
+
+# ==================== 旋转检测滤波类 ====================
+class RotationFilter:
+    """
+    旋转检测滤波：检测机器人旋转状态，防止旋转时建图产生拖尾
+    
+    原理：
+    1. 计算角速度（度/秒）
+    2. 超过阈值时暂停建图
+    3. 旋转停止后延迟恢复建图
+    """
+    def __init__(self):
+        self.pose_history = []  # 位姿历史 [(timestamp, x, y, theta), ...]
+        self.is_rotating = False  # 当前是否在旋转
+        self.rotation_stop_time = 0.0  # 旋转停止时间
+        self.last_theta = None  # 上次角度（用于角度跳变处理）
+    
+    def update_pose(self, x, y, theta):
+        """更新机器人位姿"""
+        import time
+        current_time = time.time()
+        
+        # 处理角度跳变（-180° 和 +180° 之间）
+        if self.last_theta is not None:
+            delta_theta = theta - self.last_theta
+            # 处理角度跳变
+            if delta_theta > 180:
+                delta_theta -= 360
+            elif delta_theta < -180:
+                delta_theta += 360
+            theta = self.last_theta + delta_theta
+        
+        # 添加到位姿历史
+        self.pose_history.append((current_time, x, y, theta))
+        
+        # 保持历史长度
+        if len(self.pose_history) > ROTATION_SMOOTH_WINDOW:
+            self.pose_history.pop(0)
+        
+        self.last_theta = theta
+    
+    def is_rotation_detected(self):
+        """检测是否在旋转"""
+        if not USE_ROTATION_FILTER or len(self.pose_history) < 2:
+            return False
+        
+        # 计算角速度（度/秒）
+        current_time, _, _, current_theta = self.pose_history[-1]
+        old_time, _, _, old_theta = self.pose_history[0]
+        
+        time_diff = current_time - old_time
+        if time_diff <= 0:
+            return False
+        
+        # 处理角度跳变
+        delta_theta = current_theta - old_theta
+        if delta_theta > 180:
+            delta_theta -= 360
+        elif delta_theta < -180:
+            delta_theta += 360
+        
+        angular_velocity = abs(delta_theta) / time_diff  # 度/秒
+        
+        # 检测旋转状态
+        if angular_velocity > ROTATION_THRESHOLD_DEG_S:
+            self.is_rotating = True
+            self.rotation_stop_time = 0.0  # 重置停止时间
+            return True
+        else:
+            if self.is_rotating:
+                # 刚停止旋转，记录停止时间
+                if self.rotation_stop_time == 0.0:
+                    self.rotation_stop_time = current_time
+                self.is_rotating = False
+            
+            # 检查延迟恢复
+            if self.rotation_stop_time > 0:
+                if current_time - self.rotation_stop_time > ROTATION_FILTER_DELAY:
+                    self.rotation_stop_time = 0.0  # 恢复建图
+                    return False
+                else:
+                    return True  # 仍在延迟期内
+            
+            return False
+    
+    def get_status(self):
+        """获取滤波状态信息"""
+        if not USE_ROTATION_FILTER:
+            return "Disabled"
+        
+        if self.is_rotating:
+            return "Rotating"
+        elif self.rotation_stop_time > 0:
+            import time
+            remaining = ROTATION_FILTER_DELAY - (time.time() - self.rotation_stop_time)
+            return f"Delay({remaining:.1f}s)"
+        else:
+            return "Ready"
 
 # ==================== 非线性距离校正函数 ====================
 def apply_nonlinear_distance_correction(distance_m):
@@ -656,13 +766,29 @@ class SimpleGridSLAM:
         self.DEBUG_MODE = False        # 调试模式（根据需要开启）
         # ================================
         
-    def update_map(self, angle_deg, distance_m, robot_x, robot_y, robot_theta, weight=8):
+        # 🔧 旋转检测滤波
+        self.rotation_filter = RotationFilter()
+        
+    def update_map(self, angle_deg, distance_m, robot_x, robot_y, robot_theta, weight=8, skip_rotation_check=False):
         """
         动态SLAM：考虑机器人位姿的地图更新
         
         Args:
             weight: 障碍物累积权重（默认8，实时建图可用更小值如3）
+            skip_rotation_check: 是否跳过旋转检测（如果外部已经检测过，避免重复）
         """
+        # 🔧 旋转检测滤波：旋转时不建图，防止拖尾
+        # 注意：如果外部已经检测过旋转状态，则跳过此检查
+        if not skip_rotation_check:
+            # 更新旋转检测滤波
+            self.rotation_filter.update_pose(robot_x, robot_y, robot_theta)
+            
+            # 检测旋转状态
+            if self.rotation_filter.is_rotation_detected():
+                if self.DEBUG_MODE:
+                    print(f"🔄 Rotation detected, skipping mapping (Status: {self.rotation_filter.get_status()})")
+                return
+        
         # 🔧 建图距离过滤：丢弃20cm以内和超出MAX_RANGE的点
         MIN_MAP_DISTANCE = 0.20  # 最小建图距离：20cm
         if distance_m <= MIN_MAP_DISTANCE or distance_m > MAX_RANGE:
@@ -756,9 +882,13 @@ class SimpleGridSLAM:
             if 0 <= x < MAP_SIZE and 0 <= y < MAP_SIZE:
                 current_val = self.data.grid_map[y, x]
                 if current_val > 0:
-                    # 如果当前是障碍物，温和减弱（-2每次观测）
-                    # 降低侵蚀速度，避免快速移动时真实墙被误删
-                    self.data.grid_map[y, x] = max(-10, current_val - 2)
+                    # 如果当前是障碍物，根据置信度分级侵蚀
+                    if WALL_PROTECTION_ENABLED and current_val > HIGH_CONFIDENCE_THRESHOLD:
+                        # 高置信度墙侵蚀更慢（保护真实墙）
+                        self.data.grid_map[y, x] = max(-10, current_val - HIGH_CONFIDENCE_EROSION)
+                    else:  # 低置信度墙或墙保护关闭
+                        # 普通侵蚀速度
+                        self.data.grid_map[y, x] = max(-10, current_val - NORMAL_EROSION)
                 else:
                     # 如果是未知或已是自由空间，继续降低（最低到-10）
                     self.data.grid_map[y, x] = max(-10, current_val - 1)
@@ -1047,7 +1177,7 @@ class LidarVisualizer:
         # 合理速度：0.5m/s → 100ms内移动5cm
         # 合理旋转：90°/s → 100ms内旋转9°
         MAX_SCAN_MOTION = 0.15      # 100ms内移动>15cm = 1.5m/s，过快
-        MAX_SCAN_ROTATION = 20.0    # 100ms内旋转>20° = 200°/s，过快
+        MAX_SCAN_ROTATION = 8.0     # 🔧 降低旋转阈值：100ms内旋转>8° = 80°/s，与实时旋转检测一致
         
         if motion_dist > MAX_SCAN_MOTION:
             if self.slam.DEBUG_MODE:
@@ -1067,8 +1197,10 @@ class LidarVisualizer:
             
             if interp_pose is not None:
                 # 用校正后的位姿更新地图
+                # skip_rotation_check=True 因为已经在函数开始时检查了整圈扫描的旋转状态
                 self.slam.update_map(angle, distance, 
-                                    interp_pose[0], interp_pose[1], interp_pose[2])
+                                    interp_pose[0], interp_pose[1], interp_pose[2],
+                                    skip_rotation_check=True)
                 corrected_count += 1
         
         # 调试信息
@@ -1101,6 +1233,11 @@ class LidarVisualizer:
             self.lidar_data.robot_pos = (rx_grid, ry_grid)
         
         # ========== 第一阶段：快速读取数据包（建图数据） ==========
+        # 🚀 实时旋转检测：在收集数据前先更新旋转状态
+        if current_odom is not None:
+            robot_x, robot_y, robot_theta = current_odom
+            self.slam.rotation_filter.update_pose(robot_x, robot_y, robot_theta)
+        
         for _ in range(POINTS_PER_FRAME):
             # 多线程模式：从队列读取数据
             if self.use_multithreading:
@@ -1170,15 +1307,22 @@ class LidarVisualizer:
         
         # ========== 第二阶段：批量建图（低优先级，不阻塞位置更新） ==========
         
+        # 🔧 提前检测旋转：如果当前正在旋转，跳过本帧所有建图
+        is_rotating = self.slam.rotation_filter.is_rotation_detected()
+        
         # 处理SYNC：批量插值校正建图
-        if need_process_scan:
+        if need_process_scan and not is_rotating:
             self.process_scan_buffer()  # 处理完整的上一圈（位姿插值，权重=8）
             if current_odom is not None:
                 self.scan_buffer.start_new_scan(current_odom)  # 开始新的一圈
         
-        # 实时建图：处理本帧收集的点（权重=3，提供实时反馈）
-        for angle, distance, robot_x, robot_y, robot_theta in pending_map_updates:
-            self.slam.update_map(angle, distance, robot_x, robot_y, robot_theta, weight=3)
+        # 实时建图：只在非旋转状态下处理本帧收集的点（权重=3）
+        if not is_rotating:
+            for angle, distance, robot_x, robot_y, robot_theta in pending_map_updates:
+                # skip_rotation_check=True 因为外部已经检测过旋转状态
+                self.slam.update_map(angle, distance, robot_x, robot_y, robot_theta, weight=3, skip_rotation_check=True)
+        elif self.slam.DEBUG_MODE and len(pending_map_updates) > 0:
+            print(f"🔄 Skipping {len(pending_map_updates)} points due to rotation (Status: {self.slam.rotation_filter.get_status()})")
         
         # 清理旧数据（根据配置选择模式）
         if USE_TIME_WINDOW:
@@ -1363,9 +1507,10 @@ class LidarVisualizer:
             
             # 横向展开显示（显示坐标系，与地图可视化一致）
             near_status = f"Near:{NEAR_CORRECTION_FACTOR:.2f}{'✓' if USE_NONLINEAR_CORRECTION else '✗'}"
+            rotation_status = self.slam.rotation_filter.get_status()
             status = (f"Scans: {self.lidar_data.scan_count} | Points: {points_info}{time_info} | "
                      f"Pos: ({display_x:.2f}, {display_y:.2f})m | Heading: {imu_theta:.1f}° | "
-                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
+                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Rot:{rotation_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
             
             # 多线程模式：显示队列状态和性能统计
             if self.use_multithreading:
@@ -1378,8 +1523,9 @@ class LidarVisualizer:
                 status += f" | Q:{queue_size} Odom:{odom_count} Lidar:{lidar_count} Drop:{drop_count}"
         else:
             near_status = f"Near:{NEAR_CORRECTION_FACTOR:.2f}{'✓' if USE_NONLINEAR_CORRECTION else '✗'}"
+            rotation_status = self.slam.rotation_filter.get_status()
             status = (f"Scans: {self.lidar_data.scan_count} | Points: {points_info}{time_info} | "
-                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
+                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Rot:{rotation_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
         
         self.status_text.set_text(status)
         
@@ -1514,6 +1660,14 @@ class LidarVisualizer:
         elif event.key == 'n':
             # N key: 切换非线性校正开关
             self.toggle_nonlinear_correction()
+            
+        elif event.key == 'r':
+            # R key: 切换旋转滤波开关
+            self.toggle_rotation_filter()
+            
+        elif event.key == 'w':
+            # W key: 切换墙保护开关
+            self.toggle_wall_protection()
                 
         elif event.key == 'ctrl+q':
             # Ctrl+Q: Quit
@@ -1553,6 +1707,28 @@ class LidarVisualizer:
             print(f"   近距离阈值: {NEAR_DISTANCE_THRESHOLD}m")
             print(f"   校正系数: {NEAR_CORRECTION_FACTOR:.3f}")
             print(f"   过渡范围: {CORRECTION_BLEND_RANGE}m")
+    
+    def toggle_rotation_filter(self):
+        """切换旋转滤波开关"""
+        global USE_ROTATION_FILTER
+        USE_ROTATION_FILTER = not USE_ROTATION_FILTER
+        status = "✅ ON" if USE_ROTATION_FILTER else "❌ OFF"
+        print(f"\n🔧 Rotation Filter: {status}")
+        if USE_ROTATION_FILTER:
+            print(f"   角速度阈值: {ROTATION_THRESHOLD_DEG_S}°/s")
+            print(f"   平滑窗口: {ROTATION_SMOOTH_WINDOW}个位姿")
+            print(f"   恢复延迟: {ROTATION_FILTER_DELAY}s")
+    
+    def toggle_wall_protection(self):
+        """切换墙保护开关"""
+        global WALL_PROTECTION_ENABLED
+        WALL_PROTECTION_ENABLED = not WALL_PROTECTION_ENABLED
+        status = "✅ ON" if WALL_PROTECTION_ENABLED else "❌ OFF"
+        print(f"\n🛡️  Wall Protection: {status}")
+        if WALL_PROTECTION_ENABLED:
+            print(f"   高置信度阈值: {HIGH_CONFIDENCE_THRESHOLD}")
+            print(f"   高置信度侵蚀: {HIGH_CONFIDENCE_EROSION}/次")
+            print(f"   普通侵蚀: {NORMAL_EROSION}/次")
     
     def on_key_release(self, event):
         """Keyboard release event handler"""
@@ -1630,6 +1806,7 @@ def main():
         print("  Ctrl+L  : List saved maps")
         print("  Ctrl+C  : Clear current map")
         print("  Ctrl+D  : Toggle coordinate debug mode")
+        print("  W       : Toggle wall protection (prevent wall erosion)")
         print("  Ctrl+Q  : Quit program")
         print("\n🔧 Distance Calibration (左侧按钮):")
         print("  🖱️  GUI Buttons (Bottom Panel - LEFT): [+] [−] [0] - Click to adjust distance scale")
