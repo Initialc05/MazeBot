@@ -58,9 +58,9 @@ CORRECTION_BLEND_RANGE = 0.3      # 校正混合范围(米)：在阈值附近平
 
 # 🔧 旋转检测滤波参数（防止旋转时拖尾）
 USE_ROTATION_FILTER = True        # 是否启用旋转检测滤波
-ROTATION_THRESHOLD_DEG_S = 3.0   # 🔧 角速度阈值(度/秒)：调低=更敏感（推荐：3.0-8.0）
-ROTATION_SMOOTH_WINDOW = 2        # 🔧 平滑窗口：调低=更快响应（推荐：2-5）
-ROTATION_FILTER_DELAY = 0.3       # 🔧 滤波延迟(秒)：调高=更安全，旋转停止后延迟恢复（推荐：0.3-1.0）
+ROTATION_THRESHOLD_DEG_S = 2.0   # 🔧 角速度阈值(度/秒)：调低=更敏感
+ROTATION_SMOOTH_WINDOW = 2        # 🔧 平滑窗口：调低=更快响应
+ROTATION_FILTER_DELAY = 0.3       # 🔧 滤波延迟(秒)：调高=更安全，旋转停止后延迟恢复
 
 # 🛡️ 墙保护参数（防止真实墙衰减过快）
 WALL_PROTECTION_ENABLED = True    # 是否启用墙保护机制
