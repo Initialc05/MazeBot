@@ -58,9 +58,9 @@ CORRECTION_BLEND_RANGE = 0.3      # 校正混合范围(米)：在阈值附近平
 
 # 🔧 旋转检测滤波参数（防止旋转时拖尾）
 USE_ROTATION_FILTER = True        # 是否启用旋转检测滤波
-ROTATION_THRESHOLD_DEG_S = 2.0   # 🔧 角速度阈值(度/秒)：调低=更敏感
-ROTATION_SMOOTH_WINDOW = 2        # 🔧 平滑窗口：调低=更快响应
-ROTATION_FILTER_DELAY = 0.3       # 🔧 滤波延迟(秒)：调高=更安全，旋转停止后延迟恢复
+ROTATION_THRESHOLD_DEG_S = 5.0   # 🔧 角速度阈值(度/秒)：更敏感检测旋转
+ROTATION_SMOOTH_WINDOW = 3        # 🔧 平滑窗口：减小以更快响应旋转变化
+ROTATION_FILTER_DELAY = 0.3       # 🔧 滤波延迟(秒)：增加延迟避免旋转停止时误建图
 
 # 🛡️ 墙保护参数（防止真实墙衰减过快）
 WALL_PROTECTION_ENABLED = True    # 是否启用墙保护机制
@@ -1177,7 +1177,7 @@ class LidarVisualizer:
         # 合理速度：0.5m/s → 100ms内移动5cm
         # 合理旋转：90°/s → 100ms内旋转9°
         MAX_SCAN_MOTION = 0.15      # 100ms内移动>15cm = 1.5m/s，过快
-        MAX_SCAN_ROTATION = 3.0     # 🔧 进一步降低：100ms内旋转>3° = 30°/s，严格过滤旋转扫描
+        MAX_SCAN_ROTATION = 8.0     # 🔧 降低旋转阈值：100ms内旋转>8° = 80°/s，与实时旋转检测一致
         
         if motion_dist > MAX_SCAN_MOTION:
             if self.slam.DEBUG_MODE:
@@ -1668,23 +1668,6 @@ class LidarVisualizer:
         elif event.key == 'w':
             # W key: 切换墙保护开关
             self.toggle_wall_protection()
-            
-        # 🔧 实时调整旋转检测参数
-        elif event.key == ',':
-            # , key: 降低旋转阈值（更敏感）
-            self.adjust_rotation_threshold(-0.5)
-            
-        elif event.key == '.':
-            # . key: 提高旋转阈值（更宽容）
-            self.adjust_rotation_threshold(0.5)
-            
-        elif event.key == '<':
-            # < key: 减少延迟时间
-            self.adjust_rotation_delay(-0.1)
-            
-        elif event.key == '>':
-            # > key: 增加延迟时间
-            self.adjust_rotation_delay(0.1)
                 
         elif event.key == 'ctrl+q':
             # Ctrl+Q: Quit
@@ -1746,24 +1729,6 @@ class LidarVisualizer:
             print(f"   高置信度阈值: {HIGH_CONFIDENCE_THRESHOLD}")
             print(f"   高置信度侵蚀: {HIGH_CONFIDENCE_EROSION}/次")
             print(f"   普通侵蚀: {NORMAL_EROSION}/次")
-    
-    def adjust_rotation_threshold(self, delta):
-        """实时调整旋转阈值"""
-        global ROTATION_THRESHOLD_DEG_S
-        ROTATION_THRESHOLD_DEG_S = max(1.0, min(20.0, ROTATION_THRESHOLD_DEG_S + delta))
-        sign = "+" if delta > 0 else ""
-        sensitivity = "更宽容" if delta > 0 else "更敏感"
-        print(f"\n🔧 Rotation Threshold: {ROTATION_THRESHOLD_DEG_S:.1f}°/s ({sign}{delta:.1f}) - {sensitivity}")
-        print(f"   提示: 值越小越敏感，越早检测到旋转")
-    
-    def adjust_rotation_delay(self, delta):
-        """实时调整旋转延迟"""
-        global ROTATION_FILTER_DELAY
-        ROTATION_FILTER_DELAY = max(0.0, min(2.0, ROTATION_FILTER_DELAY + delta))
-        sign = "+" if delta > 0 else ""
-        effect = "更安全，但建图恢复更慢" if delta > 0 else "建图恢复更快，但可能有残留"
-        print(f"\n🔧 Rotation Delay: {ROTATION_FILTER_DELAY:.1f}s ({sign}{delta:.1f}) - {effect}")
-        print(f"   提示: 延迟越长，旋转停止后等待越久才恢复建图")
     
     def on_key_release(self, event):
         """Keyboard release event handler"""
@@ -1842,12 +1807,6 @@ def main():
         print("  Ctrl+C  : Clear current map")
         print("  Ctrl+D  : Toggle coordinate debug mode")
         print("  W       : Toggle wall protection (prevent wall erosion)")
-        print("  R       : Toggle rotation filter ON/OFF")
-        print("\n🔧 Real-time Rotation Tuning (消除拖尾):")
-        print("  ,       : Decrease rotation threshold (-0.5°/s) - 更敏感，更早检测旋转")
-        print("  .       : Increase rotation threshold (+0.5°/s) - 更宽容，允许小幅旋转")
-        print("  <       : Decrease delay (-0.1s) - 旋转后快速恢复建图")
-        print("  >       : Increase delay (+0.1s) - 旋转后延迟恢复，更安全")
         print("  Ctrl+Q  : Quit program")
         print("\n🔧 Distance Calibration (左侧按钮):")
         print("  🖱️  GUI Buttons (Bottom Panel - LEFT): [+] [−] [0] - Click to adjust distance scale")
