@@ -1042,7 +1042,7 @@ class LidarVisualizer:
         )
         
         # 帮助文本（底部左侧）
-        help_text = "Distance(Left): [+][−][0] | Control: [↑↓←→]Move [Space]Stop | NearCorrect(Right): [◀][▶][N] | Map: [Ctrl+S]Save [Ctrl+Q]Quit"
+        help_text = "Distance(Left): [+][−][0] | Control: [↑↓←→]Move [Space]Stop | NearCorrect(Right): [◀][▶][N] | Map: [S]Save [Q]Quit"
         self.fig.text(0.01, 0.01, help_text, ha='left', va='bottom', fontsize=7, color='blue')
         
         # === 精准控制面板（底部中央横向排列） ===
@@ -1596,9 +1596,9 @@ class LidarVisualizer:
                 self.serial.ser.write(b'x')
                 self.current_direction_key = None
         
-        # === Ctrl key combinations ===
-        elif event.key == 'ctrl+s':
-            # Ctrl+S: Save map
+        # === 地图管理快捷键 ===
+        elif event.key == 's':
+            # S: Save map
             print("\n💾 Saving map...")
             metadata = {
                 'scan_count': self.lidar_data.scan_count,
@@ -1611,24 +1611,24 @@ class LidarVisualizer:
                 metadata=metadata
             )
             
-        elif event.key == 'ctrl+l':
-            # Ctrl+L: List saved maps
+        elif event.key == 'l':
+            # L: List saved maps
             print("\n" + "="*50)
             saved_maps = MapManager.list_saved_maps()
             if saved_maps:
                 print("\n💡 Tip: Use these files for map analysis")
             print("="*50)
             
-        elif event.key == 'ctrl+c':
-            # Ctrl+C: Clear map
+        elif event.key == 'c':
+            # C: Clear map
             print("\n🗑️  Clearing map...")
             self.lidar_data.grid_map = np.zeros((MAP_SIZE, MAP_SIZE), dtype=np.int8)
             self.lidar_data.robot_trajectory = []
             self.lidar_data.scan_count = 0
             print("✅ Map cleared")
             
-        elif event.key == 'ctrl+d':
-            # Ctrl+D: Toggle debug mode
+        elif event.key == 'd':
+            # D: Toggle debug mode
             self.slam.DEBUG_MODE = not self.slam.DEBUG_MODE
             status = "✅ ON" if self.slam.DEBUG_MODE else "❌ OFF"
             print(f"\n🔧 Coordinate transformation debug mode: {status}")
@@ -1669,8 +1669,8 @@ class LidarVisualizer:
             # W key: 切换墙保护开关
             self.toggle_wall_protection()
                 
-        elif event.key == 'ctrl+q':
-            # Ctrl+Q: Quit
+        elif event.key == 'q':
+            # Q: Quit
             print("\n👋 Exiting program...")
             plt.close(self.fig)
     
@@ -1802,12 +1802,12 @@ def main():
         print("  Quick Buttons: F10/F30/F50/F100, L90/L45/R45/R90")
         print("  Press Enter or click 'Send' to execute command")
         print("\n🗺️  Map Management:")
-        print("  Ctrl+S  : Save map")
-        print("  Ctrl+L  : List saved maps")
-        print("  Ctrl+C  : Clear current map")
-        print("  Ctrl+D  : Toggle coordinate debug mode")
+        print("  S       : Save map")
+        print("  L       : List saved maps")
+        print("  C       : Clear current map")
+        print("  D       : Toggle coordinate debug mode")
         print("  W       : Toggle wall protection (prevent wall erosion)")
-        print("  Ctrl+Q  : Quit program")
+        print("  Q       : Quit program")
         print("\n🔧 Distance Calibration (左侧按钮):")
         print("  🖱️  GUI Buttons (Bottom Panel - LEFT): [+] [−] [0] - Click to adjust distance scale")
         print("     + Button : Increase distance scale (+0.01) - 雷达点离中心更远")
