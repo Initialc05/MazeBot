@@ -1,4 +1,6 @@
-# Ignore Debug and .settings folder
-
+# Build output
 MazeBot_MSD/Debug/
+
+# Eclipse/CubeIDE metadata
 MazeBot_MSD/.settings
+.metadata/
