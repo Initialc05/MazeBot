@@ -1,6 +1,6 @@
 # Build output
-MazeBot_MSD/Debug/
+MSD/Debug/
 
 # Eclipse/CubeIDE metadata
-MazeBot_MSD/.settings
+MSD/.settings
 .metadata/
