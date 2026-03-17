@@ -1,0 +1,7 @@
+../Core/Src/encoder.c:27:6:Encoder_Init	8	static
+../Core/Src/encoder.c:37:6:Encoder_Update	16	static
+../Core/Src/encoder.c:53:7:Encoder_GetLeftSpeed	16	static
+../Core/Src/encoder.c:59:7:Encoder_GetRightSpeed	16	static
+../Core/Src/encoder.c:65:6:Encoder_UpdateOdometry	32	static
+../Core/Src/encoder.c:76:6:Encoder_ResetOdometry	4	static
+../Core/Src/encoder.c:83:6:Encoder_ResetTicks	4	static

@@ -1,0 +1,6 @@
+../Core/Src/freertos.c:74:6:vApplicationGetIdleTaskMemory	1
+../Core/Src/freertos.c:87:6:vApplicationGetTimerTaskMemory	1
+../Core/Src/freertos.c:103:6:CommandTask	2
+../Core/Src/freertos.c:120:6:MotorControlTask	1
+../Core/Src/freertos.c:135:6:IMU900Task	1
+../Core/Src/freertos.c:149:6:LidarTask	1
