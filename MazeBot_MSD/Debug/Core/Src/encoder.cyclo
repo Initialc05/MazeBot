@@ -1,7 +1,0 @@
-../Core/Src/encoder.c:27:6:Encoder_Init	1
-../Core/Src/encoder.c:37:6:Encoder_Update	1
-../Core/Src/encoder.c:53:7:Encoder_GetLeftSpeed	2
-../Core/Src/encoder.c:59:7:Encoder_GetRightSpeed	2
-../Core/Src/encoder.c:65:6:Encoder_UpdateOdometry	1
-../Core/Src/encoder.c:76:6:Encoder_ResetOdometry	1
-../Core/Src/encoder.c:83:6:Encoder_ResetTicks	1

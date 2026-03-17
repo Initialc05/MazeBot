@@ -1,0 +1,4 @@
+# Ignore Debug and .settings folder
+
+MazeBot_MSD/Debug/
+MazeBot_MSD/.settings
