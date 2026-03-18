@@ -24,11 +24,11 @@ import queue
 
 # ==================== 配置参数 ====================
 # 调试模式选择
-USE_BLUETOOTH_MODE = True  # True: 蓝牙模式 (COM18), False: USB串口调试模式 (COM3)
+USE_BLUETOOTH_MODE = True  # True: 蓝牙模式 (COM12), False: USB串口调试模式 (COM3)
 
 # 串口配置
 if USE_BLUETOOTH_MODE:
-    SERIAL_PORT = 'COM18'  # 蓝牙串口
+    SERIAL_PORT = 'COM12'  # 蓝牙串口
     BAUD_RATE = 921600     # 蓝牙波特率
 else:
     SERIAL_PORT = 'COM7'   # USB串口 (根据实际情况修改)
