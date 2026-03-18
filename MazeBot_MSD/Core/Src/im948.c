@@ -139,10 +139,24 @@ void IMU_Init(void)
     imu_buffer_tail = 0;
 
     Cmd_03();                                     /* 唤醒 */
+    osDelay(200);
+    IMU_ProcessDMA();                             /* 消费ACK回复 */
+
     Cmd_12(3, 0, 0, 0, 3, 2, 250, 4, 9, 0xFFF);  /* 配置参数 */
+    osDelay(200);
+    IMU_ProcessDMA();
+
     Cmd_13();                                     /* 惯导位置清零 */
+    osDelay(100);
+    IMU_ProcessDMA();
+
     Cmd_05();                                     /* Z轴角归零 */
+    osDelay(100);
+    IMU_ProcessDMA();
+
     Cmd_19();                                     /* 开启主动上报 */
+    osDelay(100);
+    IMU_ProcessDMA();                             /* 消费最后的ACK */
 }
 
 /* ==================== IMU数据更新 ==================== */
