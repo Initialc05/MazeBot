@@ -64,10 +64,11 @@ Brief (EBU6475) Section 3d 要求实现嵌入式用户界面：OLED 显示状态
 
 - 创建 `button.h/c`
 - E-STOP: PC13 EXTI 下降沿中断，NVIC 优先级 2（高于 FreeRTOS 阈值），ISR 直接清零 TIM2 PWM 并置 g_estop_latched
+  - ⚠️ 优先级 2 < configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY(5)，ISR 内禁止调用任何 FreeRTOS API
 - START/RETURN/MODE: PB4/PB7/PB2 GPIO 输入上拉，ButtonTask 20ms 轮询消抖
 - E-STOP 锁存：需 START+MODE 同时按下才能复位
 - 修改 `stm32f4xx_it.c` 添加 EXTI15_10_IRQHandler
-- 修改 `bt_cmd.c` 在 BtCmd_UpdateMotorControl() 顶部加 `if (g_estop_latched) return;`
+- 修改 `bt_cmd.c`：在 BtCmd_UpdateMotorControl() 顶部加 `if (g_estop_latched) return;`，同时在 BtCmd_ProcessByte() 的运动命令入口也加 E-STOP 检查，防止 E-STOP 期间缓存命令解锁后立即执行
 - ButtonTask: osPriorityNormal, 256 words stack, 20ms 周期
 
 ### Step 3: 电位器模块
@@ -75,6 +76,7 @@ Brief (EBU6475) Section 3d 要求实现嵌入式用户界面：OLED 显示状态
 - 创建 `potentiometer.h/c`
 - ADC1 扫描模式 + DMA 循环传输，3 通道 (IN4/IN5/IN6)
 - EMA 滤波 (α=0.1)，映射：POT1→Kp(0.5-5.0), POT2→base_duty(20-80), POT3→turn_duty(15-50)
+- Pot_Init() 中先启动一次 ADC 转换，用首次读数初始化 EMA 状态，避免从 0 开始的上升过渡
 - 修改 `stm32f4xx_hal_conf.h` 启用 ADC
 - 修改 `stm32f4xx_hal_msp.c` 添加 ADC1 MSP init
 - 修改 `stm32f4xx_it.c` 添加 DMA2_Stream0_IRQHandler
@@ -88,7 +90,7 @@ Brief (EBU6475) Section 3d 要求实现嵌入式用户界面：OLED 显示状态
 - 创建 `ui_task.h/c`：UITask 读取共享全局变量显示 4 行信息
 - 修改 `stm32f4xx_hal_conf.h` 启用 I2C
 - 修改 `stm32f4xx_hal_msp.c` 添加 I2C1 MSP init
-- UITask: osPriorityBelowNormal, 256 words stack, 200ms 周期
+- UITask: osPriorityBelowNormal, 384 words stack, 200ms 周期（snprintf + HAL I2C 调用需要较大栈空间）
 - 显示内容：状态 / 位姿(x,y) / 航向+速度 / 电位器参数值
 
 ### Step 5: main.c 整合
@@ -104,7 +106,7 @@ Brief (EBU6475) Section 3d 要求实现嵌入式用户界面：OLED 显示状态
 
 ## FreeRTOS 资源预算
 
-新增 2 个任务，总堆使用约 12.6KB / 24KB，剩余 ~12KB 余量充足。
+新增 2 个任务，总堆使用约 10.8KB / 24KB，剩余 ~13.2KB 余量充足。
 SSD1306 帧缓冲 1024B 静态 RAM，ADC DMA 缓冲 6B，总新增静态 RAM ~1.1KB。
 
 ## 验证方法
