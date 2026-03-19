@@ -39,6 +39,11 @@ static PID_t headingPID;
 static PID_t velDiffPID;
 static PID_t turnPID;
 
+/* PID 绑定变量 */
+static float headingInput, headingOutput, headingSetpoint;
+static float velDiffInput, velDiffOutput, velDiffSetpoint;
+static float turnInput,    turnOutput,    turnSetpoint;
+
 /* ==================== 全局状态 ==================== */
 TurnState turnState  = TURN_IDLE;
 MoveState moveState  = MOVE_IDLE;
@@ -76,9 +81,26 @@ static float yawError(float current, float target)
 /* ==================== 初始化 ==================== */
 void BtCmd_Init(void)
 {
-    PID_Init(&headingPID, KH_P, KH_I, KH_D, -MAX_VEL_DIFF_TARGET, MAX_VEL_DIFF_TARGET);
-    PID_Init(&velDiffPID, KV_P, KV_I, KV_D, -MAX_DUTY_CORR, MAX_DUTY_CORR);
-    PID_Init(&turnPID,    KT_P, KT_I, KT_D, -(float)TURN_SPEED_MAX, (float)TURN_SPEED_MAX);
+    /* Heading PID */
+    headingSetpoint = 0.0f;
+    PID_InitSimple(&headingPID, &headingInput, &headingOutput, &headingSetpoint, KH_P, KH_I, KH_D);
+    PID_SetOutputLimits(&headingPID, -MAX_VEL_DIFF_TARGET, MAX_VEL_DIFF_TARGET);
+    PID_SetSampleTime(&headingPID, 0.005f);
+    PID_SetMode(&headingPID, PID_AUTOMATIC);
+
+    /* VelDiff PID */
+    velDiffSetpoint = 0.0f;
+    PID_InitSimple(&velDiffPID, &velDiffInput, &velDiffOutput, &velDiffSetpoint, KV_P, KV_I, KV_D);
+    PID_SetOutputLimits(&velDiffPID, -MAX_DUTY_CORR, MAX_DUTY_CORR);
+    PID_SetSampleTime(&velDiffPID, 0.005f);
+    PID_SetMode(&velDiffPID, PID_AUTOMATIC);
+
+    /* Turn PID */
+    turnSetpoint = 0.0f;
+    PID_InitSimple(&turnPID, &turnInput, &turnOutput, &turnSetpoint, KT_P, KT_I, KT_D);
+    PID_SetOutputLimits(&turnPID, -(float)TURN_SPEED_MAX, (float)TURN_SPEED_MAX);
+    PID_SetSampleTime(&turnPID, 0.005f);
+    PID_SetMode(&turnPID, PID_AUTOMATIC);
 
     turnState  = TURN_IDLE;
     moveState  = MOVE_IDLE;
@@ -222,8 +244,10 @@ static void updateTurnControl(float dt_s)
     }
 
     /* PID计算 */
-    PID_SetTarget(&turnPID, 0.0f);
-    float duty_f = PID_Compute(&turnPID, err, dt_s);
+    turnSetpoint = 0.0f;
+    turnInput = err;
+    PID_Compute(&turnPID);
+    float duty_f = turnOutput;
     int duty = (int)fabsf(duty_f);
     if (duty < TURN_SPEED_MIN) duty = TURN_SPEED_MIN;
     if (duty > TURN_SPEED_MAX) duty = TURN_SPEED_MAX;
@@ -266,15 +290,19 @@ static void updateMoveControl(float dt_s)
 
     /* 外环: 航向误差 → 目标速度差 */
     float heading_err = yawError(AngleZ, targetYaw);
-    PID_SetTarget(&headingPID, 0.0f);
-    float vel_diff_target = PID_Compute(&headingPID, heading_err, dt_s);
+    headingSetpoint = 0.0f;
+    headingInput = heading_err;
+    PID_Compute(&headingPID);
+    float vel_diff_target = headingOutput;
 
     /* 内环: 速度差 → 占空比修正 */
     float left_spd  = Encoder_GetLeftSpeed(dt_s);
     float right_spd = Encoder_GetRightSpeed(dt_s);
     float vel_diff  = left_spd - right_spd;
-    PID_SetTarget(&velDiffPID, vel_diff_target);
-    float duty_corr = PID_Compute(&velDiffPID, vel_diff, dt_s);
+    velDiffSetpoint = vel_diff_target;
+    velDiffInput = vel_diff;
+    PID_Compute(&velDiffPID);
+    float duty_corr = velDiffOutput;
 
     /* 应用到电机 */
     int base = MOTOR_BASE_DUTY;
@@ -303,13 +331,17 @@ static void updateSimpleControl(float dt_s)
     if (c == 'w' || c == 'W' || c == 's' || c == 'S') {
         /* 直行: 航向PID保持方向 */
         float heading_err = yawError(AngleZ, targetYaw);
-        PID_SetTarget(&headingPID, 0.0f);
-        float vel_diff_target = PID_Compute(&headingPID, heading_err, dt_s);
+        headingSetpoint = 0.0f;
+        headingInput = heading_err;
+        PID_Compute(&headingPID);
+        float vel_diff_target = headingOutput;
 
         float left_spd  = Encoder_GetLeftSpeed(dt_s);
         float right_spd = Encoder_GetRightSpeed(dt_s);
-        PID_SetTarget(&velDiffPID, vel_diff_target);
-        float duty_corr = PID_Compute(&velDiffPID, left_spd - right_spd, dt_s);
+        velDiffSetpoint = vel_diff_target;
+        velDiffInput = left_spd - right_spd;
+        PID_Compute(&velDiffPID);
+        float duty_corr = velDiffOutput;
 
         int base = MOTOR_BASE_DUTY;
         int l_duty = base - (int)duty_corr;

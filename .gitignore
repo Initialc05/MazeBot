@@ -7,3 +7,6 @@ MazeBot_MSD/.settings
 
 # Python cache
 Host/__pycache__/
+
+# Claude Code
+.claude/
