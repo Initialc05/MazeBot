@@ -26,6 +26,7 @@
 /* USER CODE BEGIN Includes */
 #include "uart_device.h"
 #include "cmsis_os.h"
+#include "robot_state.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,6 +60,7 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern DMA_HandleTypeDef hdma_adc1;
 extern DMA_HandleTypeDef hdma_uart4_rx;
 extern DMA_HandleTypeDef hdma_uart5_rx;
 extern DMA_HandleTypeDef hdma_usart1_rx;
@@ -281,6 +283,20 @@ void UART5_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles DMA2 stream0 global interrupt.
+  */
+void DMA2_Stream0_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA2_Stream0_IRQn 0 */
+
+  /* USER CODE END DMA2_Stream0_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_adc1);
+  /* USER CODE BEGIN DMA2_Stream0_IRQn 1 */
+
+  /* USER CODE END DMA2_Stream0_IRQn 1 */
+}
+
+/**
   * @brief This function handles DMA2 stream2 global interrupt.
   */
 void DMA2_Stream2_IRQHandler(void)
@@ -295,5 +311,18 @@ void DMA2_Stream2_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+
+/**
+ * @brief EXTI15_10 中断 — E-STOP (PC13)
+ * ⚠️ 优先级 2, 高于 FreeRTOS 阈值, 禁止调用任何 FreeRTOS API
+ */
+void EXTI15_10_IRQHandler(void)
+{
+  if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_13) != RESET)
+  {
+    __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_13);
+    RobotState_LatchEstop();
+  }
+}
 
 /* USER CODE END 1 */

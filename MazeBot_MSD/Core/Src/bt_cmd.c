@@ -8,6 +8,8 @@
 #include "pid.h"
 #include "im948.h"
 #include "uart_device.h"
+#include "robot_state.h"
+#include "potentiometer.h"
 #include <math.h>
 #include <ctype.h>
 #include <string.h>
@@ -159,6 +161,12 @@ static int simple_atoi(const char *s, int len)
 
 void BtCmd_ProcessByte(char cmd)
 {
+    /* E-STOP 守卫: 拒绝所有运动命令 */
+    if (g_estop_latched) {
+        if (cmd == '\n' || cmd == '\r') cmdBufLen = 0;
+        return;
+    }
+
     /* 多字符命令起始: F/B/L/R */
     if (cmd == 'F' || cmd == 'B' || cmd == 'L' || cmd == 'R') {
         cmdBuf[0] = cmd;
@@ -305,7 +313,7 @@ static void updateMoveControl(float dt_s)
     float duty_corr = velDiffOutput;
 
     /* 应用到电机 */
-    int base = MOTOR_BASE_DUTY;
+    int base = (int)g_pot_values.base_duty;
     int l_duty = base - (int)duty_corr;
     int r_duty = base + (int)duty_corr;
     if (l_duty < 0) l_duty = 0;
@@ -343,7 +351,7 @@ static void updateSimpleControl(float dt_s)
         PID_Compute(&velDiffPID);
         float duty_corr = velDiffOutput;
 
-        int base = MOTOR_BASE_DUTY;
+        int base = (int)g_pot_values.base_duty;
         int l_duty = base - (int)duty_corr;
         int r_duty = base + (int)duty_corr;
         if (l_duty < 0) l_duty = 0;
@@ -355,15 +363,21 @@ static void updateSimpleControl(float dt_s)
         Motor_Set(dir, l_duty, dir, r_duty);
 
     } else if (c == 'a' || c == 'A') {
-        Motor_TurnLeft(MOTOR_TURN_DUTY);
+        Motor_TurnLeft((int)g_pot_values.turn_duty);
     } else if (c == 'd' || c == 'D') {
-        Motor_TurnRight(MOTOR_TURN_DUTY);
+        Motor_TurnRight((int)g_pot_values.turn_duty);
     }
 }
 
 /* ==================== 总控制入口 ==================== */
 void BtCmd_UpdateMotorControl(float dt_s)
 {
+    /* E-STOP 守卫 */
+    if (g_estop_latched) {
+        Motor_Brake();
+        return;
+    }
+
     /* 优先级1: 精准转弯 */
     if (turnState == TURN_ROTATING) {
         updateTurnControl(dt_s);

@@ -31,6 +31,9 @@
 #include "im948.h"
 #include "bt_cmd.h"
 #include "lidar.h"
+#include "robot_state.h"
+#include "button.h"
+#include "ui_task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/

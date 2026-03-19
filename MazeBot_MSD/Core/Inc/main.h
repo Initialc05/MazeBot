@@ -66,6 +66,7 @@ extern DMA_HandleTypeDef hdma_uart4_rx;
 extern DMA_HandleTypeDef hdma_uart5_rx;
 extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart2_rx;
+extern I2C_HandleTypeDef hi2c1;
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
