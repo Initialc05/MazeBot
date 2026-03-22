@@ -20,7 +20,12 @@ void UITask(void const *argument)
 {
     (void)argument;
 
-    SSD1306_Init();
+    bool oled_ok = SSD1306_Init();
+    if (!oled_ok) {
+        printf("[UI] SSD1306 init FAILED - I2C not responding\r\n");
+    } else {
+        printf("[UI] SSD1306 init OK\r\n");
+    }
     char line[22]; /* 128/6 = 21 字符 + '\0' */
 
     for (;;) {

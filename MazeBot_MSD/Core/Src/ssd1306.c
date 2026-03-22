@@ -124,6 +124,11 @@ bool SSD1306_Init(void)
 {
     HAL_Delay(100); /* 等待 OLED 上电稳定 */
 
+    /* 先探测 I2C 设备是否存在 */
+    if (HAL_I2C_IsDeviceReady(&hi2c1, SSD1306_ADDR, 3, 100) != HAL_OK) {
+        return false; /* OLED 未连接或 I2C 故障 */
+    }
+
     static const uint8_t initSeq[] = {
         0xAE,       /* Display OFF */
         0xD5, 0x80, /* Set clock div */
