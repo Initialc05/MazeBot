@@ -24,14 +24,14 @@ import queue
 
 # ==================== 配置参数 ====================
 # 调试模式选择
-USE_BLUETOOTH_MODE = True  # True: 蓝牙模式 (COM11), False: USB串口调试模式 (COM3)
+USE_BLUETOOTH_MODE = True  # True: 蓝牙模式, False: USB串口调试模式
 
 # 串口配置
 if USE_BLUETOOTH_MODE:
-    SERIAL_PORT = 'COM11'  # 蓝牙串口
+    SERIAL_PORT = 'COM13'  # 蓝牙串口
     BAUD_RATE = 921600     # 蓝牙波特率
 else:
-    SERIAL_PORT = 'COM7'   # USB串口 (根据实际情况修改)
+    SERIAL_PORT = 'COM7'   # USB串口
     BAUD_RATE = 115200     # USB串口波特率
 
 PACKET_SIZE = 14  # 数据包大小（雷达+Odom）
