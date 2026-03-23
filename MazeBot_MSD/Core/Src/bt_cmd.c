@@ -306,16 +306,16 @@ static void updateMoveControl(float dt_s)
     /* 内环: 速度差 → 占空比修正 */
     float left_spd  = Encoder_GetLeftSpeed(dt_s);
     float right_spd = Encoder_GetRightSpeed(dt_s);
-    float vel_diff  = left_spd - right_spd;
+    float vel_diff  = right_spd - left_spd;
     velDiffSetpoint = vel_diff_target;
     velDiffInput = vel_diff;
     PID_Compute(&velDiffPID);
-    float duty_corr = velDiffOutput;
+    float duty_corr = velDiffOutput * (float)moveDirection;
 
     /* 应用到电机 */
     int base = (int)g_pot_values.base_duty;
-    int l_duty = base - (int)duty_corr;
-    int r_duty = base + (int)duty_corr;
+    int l_duty = (int)lroundf((float)base - duty_corr * 0.5f);
+    int r_duty = (int)lroundf((float)base + duty_corr * 0.5f);
     if (l_duty < 0) l_duty = 0;
     if (r_duty < 0) r_duty = 0;
     if (l_duty > MOTOR_DUTY_MAX) l_duty = MOTOR_DUTY_MAX;
@@ -347,19 +347,18 @@ static void updateSimpleControl(float dt_s)
         float left_spd  = Encoder_GetLeftSpeed(dt_s);
         float right_spd = Encoder_GetRightSpeed(dt_s);
         velDiffSetpoint = vel_diff_target;
-        velDiffInput = left_spd - right_spd;
+        velDiffInput = right_spd - left_spd;
         PID_Compute(&velDiffPID);
-        float duty_corr = velDiffOutput;
+        int dir = (c == 'w' || c == 'W') ? 1 : -1;
+        float duty_corr = velDiffOutput * (float)dir;
 
         int base = (int)g_pot_values.base_duty;
-        int l_duty = base - (int)duty_corr;
-        int r_duty = base + (int)duty_corr;
+        int l_duty = (int)lroundf((float)base - duty_corr * 0.5f);
+        int r_duty = (int)lroundf((float)base + duty_corr * 0.5f);
         if (l_duty < 0) l_duty = 0;
         if (l_duty > 100) l_duty = 100;
         if (r_duty < 0) r_duty = 0;
         if (r_duty > 100) r_duty = 100;
-
-        int dir = (c == 'w' || c == 'W') ? 1 : -1;
         Motor_Set(dir, l_duty, dir, r_duty);
 
     } else if (c == 'a' || c == 'A') {
