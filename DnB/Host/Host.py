@@ -22,6 +22,13 @@ from PIL import Image
 import threading
 import queue
 
+from maze_controller import MazeController
+from maze_matcher import MazeMatcher
+from maze_navigator import MazeNavigator
+from maze_perception import MazePerception
+from maze_topology import MazeTopology
+from maze_types import MotionMode
+
 # ==================== 配置参数 ====================
 # 调试模式选择
 USE_BLUETOOTH_MODE = True  # True: 蓝牙模式, False: USB串口调试模式
@@ -916,6 +923,20 @@ class LidarVisualizer:
         
         # 🚀 共享Odom数据（线程安全，零延迟更新）
         self.shared_odom = SharedOdomData() if USE_SEPARATE_ODOM_THREAD else None
+
+        # 自动导航组件
+        self.perception = MazePerception(MAP_SIZE, MAP_RESOLUTION)
+        self.matcher = MazeMatcher(MAP_SIZE, MAP_RESOLUTION)
+        self.topology = MazeTopology()
+        self.controller = MazeController(self.send_motion_command, self.perception)
+        self.navigator = MazeNavigator(self.topology, self.perception, self.matcher, self.controller)
+        self.auto_enabled = False
+        self.goal_row = 4
+        self.goal_col = 4
+        self.latest_scan_points = []
+        self.last_motion_command = 'x'
+        self.last_motion_send_time = 0.0
+        self.motion_keepalive_interval = 0.15
         
         # 多线程模式配置
         self.use_multithreading = use_multithreading
@@ -1052,7 +1073,7 @@ class LidarVisualizer:
         spacing = 0.005
         
         # 标题
-        self.fig.text(0.5, 0.085, '━━━━ Precise Control | Distance Calibration | Near Correction ━━━━', ha='center', fontsize=8, 
+        self.fig.text(0.5, 0.085, '━━━━ Precise Control | Distance Calibration | Near Correction | Auto Nav ━━━━', ha='center', fontsize=8,
                      weight='bold', color='darkblue')
         
         # 🎨 对称布局：距离校准按钮(左) ←→ 近距离校正按钮(右) 关于中心对称
@@ -1145,7 +1166,23 @@ class LidarVisualizer:
         
         self.btn_near_toggle.label.set_fontsize(9)
         self.btn_near_toggle.on_clicked(lambda event: self.toggle_nonlinear_correction())
-        
+
+        # 自动导航控件
+        auto_x = 0.58
+        ax_goal = plt.axes([auto_x, bottom_y, 0.08, button_height])
+        self.goal_box = TextBox(ax_goal, 'Goal', initial='4,4', color='lavender', hovercolor='plum')
+        self.goal_box.label.set_fontsize(8)
+        self.goal_box.on_submit(self.on_goal_submit)
+
+        ax_auto_start = plt.axes([auto_x + 0.09, bottom_y, 0.05, button_height])
+        ax_auto_stop = plt.axes([auto_x + 0.15, bottom_y, 0.05, button_height])
+        self.btn_auto_start = Button(ax_auto_start, 'AUTO', color='lightgreen', hovercolor='green')
+        self.btn_auto_stop = Button(ax_auto_stop, 'STOP', color='mistyrose', hovercolor='red')
+        self.btn_auto_start.label.set_fontsize(7)
+        self.btn_auto_stop.label.set_fontsize(7)
+        self.btn_auto_start.on_clicked(self.on_auto_start)
+        self.btn_auto_stop.on_clicked(self.on_auto_stop)
+
         # 绑定键盘事件
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
         self.fig.canvas.mpl_connect('key_release_event', self.on_key_release)
@@ -1189,17 +1226,28 @@ class LidarVisualizer:
                 print(f"⚠️  Scan rotation too large: {rotation_angle:.1f}° (>{MAX_SCAN_ROTATION:.0f}°), skipping...")
             return
         
+        match_result = None
+        if len(self.scan_buffer.points) >= 20 and self.scan_buffer.end_pose is not None:
+            match_result = self.matcher.match_scan(self.lidar_data.grid_map, self.scan_buffer.points, self.scan_buffer.end_pose)
+
         # 对每个点进行位姿插值校正并建图
         corrected_count = 0
         for angle, distance, quality in self.scan_buffer.points:
             # 🎯 根据角度插值计算该点扫描时的真实位姿
             interp_pose = self.scan_buffer.get_interpolated_pose(angle)
-            
+
             if interp_pose is not None:
+                corrected_pose = interp_pose
+                if match_result is not None and match_result.accepted:
+                    corrected_pose = (
+                        interp_pose[0] + match_result.dx,
+                        interp_pose[1] + match_result.dy,
+                        interp_pose[2] + match_result.dtheta,
+                    )
                 # 用校正后的位姿更新地图
                 # skip_rotation_check=True 因为已经在函数开始时检查了整圈扫描的旋转状态
-                self.slam.update_map(angle, distance, 
-                                    interp_pose[0], interp_pose[1], interp_pose[2],
+                self.slam.update_map(angle, distance,
+                                    corrected_pose[0], corrected_pose[1], corrected_pose[2],
                                     skip_rotation_check=True)
                 corrected_count += 1
         
@@ -1211,7 +1259,7 @@ class LidarVisualizer:
     def update(self, frame):
         """
         动画更新函数（优化版：位置更新优先于建图）
-        
+
         策略：
         0. 【最高优先级】从SharedOdomData立即更新位置（零延迟）
         1. 第一阶段：快速读取所有数据包（建图数据）
@@ -1220,6 +1268,10 @@ class LidarVisualizer:
         current_odom = None
         pending_map_updates = []  # 待建图的点列表
         need_process_scan = False  # 是否需要处理扫描缓冲区
+        display_x = None
+        display_y = None
+        display_heading = None
+        self.latest_scan_points = []
         
         # ========== 【最高优先级】立即更新Odom（从共享数据，零延迟） ==========
         if USE_SEPARATE_ODOM_THREAD and self.shared_odom is not None:
@@ -1301,7 +1353,8 @@ class LidarVisualizer:
             
             # 🚀 添加到扫描缓冲区（用于批量插值校正）
             self.scan_buffer.add_point(angle, distance, quality, current_odom)
-            
+            self.latest_scan_points.append((angle, distance, quality))
+
             # 收集待建图的点（延迟到第二阶段处理）
             pending_map_updates.append((angle, distance, robot_x, robot_y, robot_theta))
         
@@ -1499,18 +1552,24 @@ class LidarVisualizer:
             points_info = f"{total_points}"
         
         if current_odom:
+            nav_scan_points = self.scan_buffer.points if len(self.scan_buffer.points) >= 20 else self.latest_scan_points
+            nav_status = self.navigator.step(current_odom, self.lidar_data.grid_map, nav_scan_points) if self.auto_enabled else "manual"
+            if self.auto_enabled and self.controller.status.mode != MotionMode.IDLE:
+                self.maybe_refresh_motion_command()
             # 🔄 统一坐标系：将IMU坐标转换为显示坐标系（与地图一致）
             # IMU坐标系 → 显示坐标系：x_display = -y_imu, y_display = x_imu
             imu_x, imu_y, imu_theta = current_odom
             display_x = -imu_y  # 显示X = -IMU_Y
             display_y = imu_x   # 显示Y = IMU_X
-            
+            display_heading = imu_theta
+
             # 横向展开显示（显示坐标系，与地图可视化一致）
             near_status = f"Near:{NEAR_CORRECTION_FACTOR:.2f}{'✓' if USE_NONLINEAR_CORRECTION else '✗'}"
             rotation_status = self.slam.rotation_filter.get_status()
             status = (f"Scans: {self.lidar_data.scan_count} | Points: {points_info}{time_info} | "
-                     f"Pos: ({display_x:.2f}, {display_y:.2f})m | Heading: {imu_theta:.1f}° | "
-                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Rot:{rotation_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
+                     f"Pos: ({display_x:.2f}, {display_y:.2f})m | Heading: {imu_theta:.2f}° | "
+                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Rot:{rotation_status} | "
+                     f"Nav:{nav_status} | Goal:({self.goal_row},{self.goal_col}) | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
             
             # 多线程模式：显示队列状态和性能统计
             if self.use_multithreading:
@@ -1525,12 +1584,39 @@ class LidarVisualizer:
             near_status = f"Near:{NEAR_CORRECTION_FACTOR:.2f}{'✓' if USE_NONLINEAR_CORRECTION else '✗'}"
             rotation_status = self.slam.rotation_filter.get_status()
             status = (f"Scans: {self.lidar_data.scan_count} | Points: {points_info}{time_info} | "
-                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Rot:{rotation_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
+                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Rot:{rotation_status} | Nav:{self.navigator.status_message if self.auto_enabled else 'manual'} | Goal:({self.goal_row},{self.goal_col}) | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
         
         self.status_text.set_text(status)
-        
+
+        if USE_BLUETOOTH_MODE and display_x is not None and display_y is not None and display_heading is not None:
+            try:
+                display_packet = f"@D,{display_x:.2f},{display_y:.2f},{display_heading:.2f}\n"
+                self.serial.ser.write(display_packet.encode())
+            except Exception:
+                pass
+
         return self.scatter, self.map_img, self.trajectory_line, self.robot_direction_line, self.robot_center, self.status_text
     
+    def send_motion_command(self, command):
+        """发送连续运动控制指令到小车"""
+        if not USE_BLUETOOTH_MODE:
+            return
+        try:
+            payload = command.encode() if isinstance(command, str) else command
+            self.serial.ser.write(payload)
+            self.last_motion_command = command if isinstance(command, str) else payload.decode(errors='ignore')
+            self.last_motion_send_time = time.time()
+        except Exception as e:
+            print(f"❌ 运动指令发送失败: {e}")
+
+    def maybe_refresh_motion_command(self):
+        if not USE_BLUETOOTH_MODE:
+            return
+        if self.last_motion_command in ('x', '', None):
+            return
+        if time.time() - self.last_motion_send_time >= self.motion_keepalive_interval:
+            self.send_motion_command(self.last_motion_command)
+
     def send_precise_command(self, command):
         """发送精准控制指令到小车"""
         if not USE_BLUETOOTH_MODE:
@@ -1562,6 +1648,33 @@ class LidarVisualizer:
             self.send_precise_command(command)
             self.textbox.set_val('')  # 清空输入框
     
+    def on_goal_submit(self, text):
+        raw = text.strip()
+        try:
+            row_text, col_text = raw.split(',')
+            row = int(row_text)
+            col = int(col_text)
+        except ValueError:
+            print("⚠️  Goal 格式应为 row,col，例如 4,4")
+            self.goal_box.set_val(f"{self.goal_row},{self.goal_col}")
+            return
+        self.goal_row = max(0, min(4, row))
+        self.goal_col = max(0, min(4, col))
+        self.navigator.configure_goal(self.goal_row, self.goal_col)
+        print(f"🎯 Auto goal set to ({self.goal_row}, {self.goal_col})")
+
+    def on_auto_start(self, event):
+        self.navigator.configure_goal(self.goal_row, self.goal_col)
+        self.navigator.start()
+        self.auto_enabled = True
+        print(f"🤖 Auto navigation started: goal=({self.goal_row}, {self.goal_col})")
+
+    def on_auto_stop(self, event):
+        self.auto_enabled = False
+        self.navigator.abort("auto-stopped")
+        self.send_motion_command('x')
+        print("🛑 Auto navigation stopped")
+
     def on_key_press(self, event):
         """Keyboard press event handler"""
         # === Direction keys control robot (hold to execute) ===
@@ -1570,30 +1683,35 @@ class LidarVisualizer:
             if event.key == 'up':
                 # ↑: Forward
                 if self.current_direction_key != 'up':
-                    self.serial.ser.write(b'W')
+                    self.auto_enabled = False
+                    self.send_motion_command('W')
                     self.current_direction_key = 'up'
-                
+
             elif event.key == 'down':
                 # ↓: Backward
                 if self.current_direction_key != 'down':
-                    self.serial.ser.write(b'S')
+                    self.auto_enabled = False
+                    self.send_motion_command('S')
                     self.current_direction_key = 'down'
-                
+
             elif event.key == 'left':
                 # ←: Turn left
                 if self.current_direction_key != 'left':
-                    self.serial.ser.write(b'A')
+                    self.auto_enabled = False
+                    self.send_motion_command('A')
                     self.current_direction_key = 'left'
-                
+
             elif event.key == 'right':
                 # →: Turn right
                 if self.current_direction_key != 'right':
-                    self.serial.ser.write(b'D')
+                    self.auto_enabled = False
+                    self.send_motion_command('D')
                     self.current_direction_key = 'right'
-                
+
             elif event.key == ' ':
                 # Space: Stop
-                self.serial.ser.write(b'x')
+                self.auto_enabled = False
+                self.send_motion_command('x')
                 self.current_direction_key = None
         
         # === 地图管理快捷键 ===
@@ -1735,7 +1853,7 @@ class LidarVisualizer:
         # Brake immediately when direction key is released (only in Bluetooth mode)
         if USE_BLUETOOTH_MODE and event.key in ['up', 'down', 'left', 'right']:
             if self.current_direction_key == event.key:
-                self.serial.ser.write(b'x')
+                self.send_motion_command('x')
                 self.current_direction_key = None
     
     def start(self):

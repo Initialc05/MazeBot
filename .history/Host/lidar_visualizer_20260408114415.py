@@ -24,7 +24,7 @@ import queue
 
 # ==================== 配置参数 ====================
 # 调试模式选择
-USE_BLUETOOTH_MODE = True  # True: 蓝牙模式, False: USB串口调试模式
+USE_BLUETOOTH_MODE = False  # True: 蓝牙模式, False: USB串口调试模式
 
 # 串口配置
 if USE_BLUETOOTH_MODE:

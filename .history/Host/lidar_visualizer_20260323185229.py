@@ -31,7 +31,7 @@ if USE_BLUETOOTH_MODE:
     SERIAL_PORT = 'COM13'  # 蓝牙串口
     BAUD_RATE = 921600     # 蓝牙波特率
 else:
-    SERIAL_PORT = 'COM18'   # USB串口
+    SERIAL_PORT = 'COM7'   # USB串口
     BAUD_RATE = 115200     # USB串口波特率
 
 PACKET_SIZE = 14  # 数据包大小（雷达+Odom）

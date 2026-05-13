@@ -6,10 +6,15 @@ HardwareSerial IMU900Serial(PA10, PB6);  // IMU900串口
 HardwareSerial LidarSerial(PD2, PC12);   // 雷达串口
 
 // 功能定义模块
-#include "im948_CMD.h"
-#include "LidarModule.h"  
-#include "EncoderModule.h"
-#include "MotorControl.h"
+#include "Inc/im948_CMD.h"
+#include "Inc/LidarModule.h"
+#include "Inc/EncoderModule.h"
+#include "Inc/robot_state.h"
+#include "Inc/potentiometer.h"
+#include "Inc/button_input.h"
+#include "Inc/ui_task.h"
+#include "Inc/host_display_sync.h"
+#include "Inc/MotorControl.h"
 
 // 调试输出宏（根据 LidarModule.h 中的配置）
 #if DEBUG_PRINT_ENABLED
@@ -88,6 +93,10 @@ void setup() {
   initLidar();
   initMotors();
   initEncoders();
+  RobotState_Init();
+  HostDisplay_Init();
+  Pot_Init();
+  initButtons();
   initPID();
 
   // ==================== 启动FreeRTOS任务 ====================
@@ -107,6 +116,8 @@ void setup() {
   xTaskCreate(LidarTask, "LIDAR", 2048, NULL, 3, NULL);             // 高优先级，低延迟
   xTaskCreate(CommandTask, "CMD", 512, NULL, 4, NULL);              // 最高优先级，极速响应
   xTaskCreate(MotorControlTask, "MotorCtrl", 1024, NULL, 4, NULL);  // 最高优先级，实时控制
+  xTaskCreate(ButtonTask, "Button", 512, NULL, 2, NULL);            // 中优先级，按键轮询
+  xTaskCreate(UITask, "UI", 1024, NULL, 1, NULL);                   // 低优先级，显示刷新
 
   // 启动FreeRTOS任务调度
   vTaskStartScheduler();
