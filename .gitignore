@@ -7,6 +7,10 @@ MazeBot_MSD/.settings
 
 # Python cache
 Host/__pycache__/
+__pycache__/
+
+# Local algorithm prototype run artifacts
+本地测试文件/03_算法原型/phase3_robot/run.log
 
 # Claude Code
 .claude/
