@@ -5,7 +5,7 @@ MazeBot 导航算法的纯软件原型。**不依赖真车**——目的是验�
 ## 怎么跑
 
 ```bash
-cd 03_算法原型/flood_fill_sim
+cd Host/navigation/flood_fill_sim
 
 # 分支 A：老师不给图，从零探索（默认）
 python visualize.py

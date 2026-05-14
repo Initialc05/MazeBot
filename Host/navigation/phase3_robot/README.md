@@ -12,14 +12,14 @@
 ## 明天的使用顺序（强烈建议按这个顺序）
 
 ### Step 0：出发前（在家）
-- 把整个 `本地测试文件/` 目录同步到带去调试的电脑
-- 或者保证笔记本能用 git/U 盘/云盘把脚本带去现场
+- `git clone` 仓库到带去调试的电脑
+- 或者用 git/U 盘/云盘把整个 `Host/navigation/` 目录带过去
 
 ### Step 1：到场后基础连接（10 分钟）
 1. **不用 `lidar_visualizer.py`**（它会占用蓝牙串口）。但可以**先跑一次**确认蓝牙通，再关掉
 2. 关 `lidar_visualizer.py` 后：
    ```bash
-   cd c:\Users\21881\Desktop\MazeBot\本地测试文件\03_算法原型\phase3_robot
+   cd Host/navigation/phase3_robot
    python sense_one_cell.py
    ```
 3. 期待输出：
@@ -149,7 +149,7 @@ phase3_robot/
 ## 今晚我做完了，你不用再做什么
 
 明天早上出门前：
-- 把 `本地测试文件/` 带上
+- 把 `Host/navigation/` 带上（或直接 git clone）
 - 确认蓝牙还能配对
 - 充满车的电池
 - 带卷尺和笔（记错误数据）

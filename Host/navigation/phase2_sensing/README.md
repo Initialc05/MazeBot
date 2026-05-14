@@ -38,7 +38,7 @@
 ## 怎么跑
 
 ```bash
-cd 03_算法原型/phase2_sensing
+cd Host/navigation/phase2_sensing
 
 # 仿真雷达预览（生成 fake_scan_preview.png）
 python fake_lidar.py

@@ -9,8 +9,8 @@ MazeBot_MSD/.settings
 Host/__pycache__/
 __pycache__/
 
-# Local algorithm prototype run artifacts
-本地测试文件/03_算法原型/phase3_robot/run.log
+# Navigation runtime artifacts
+Host/navigation/phase3_robot/run.log
 
 # Claude Code
 .claude/
