@@ -28,7 +28,7 @@ USE_BLUETOOTH_MODE = True  # True: 蓝牙模式, False: USB串口调试模式
 
 # 串口配置
 if USE_BLUETOOTH_MODE:
-    SERIAL_PORT = 'COM13'  # 蓝牙串口
+    SERIAL_PORT = 'COM4'  # 蓝牙串口
     BAUD_RATE = 921600     # 蓝牙波特率
 else:
     SERIAL_PORT = 'COM18'   # USB串口
