@@ -1,0 +1,12 @@
+../Core/Src/motor.c:21:19:clamp	3
+../Core/Src/motor.c:29:24:duty_to_pwm	1
+../Core/Src/motor.c:35:6:Motor_Init	1
+../Core/Src/motor.c:42:6:Motor_SetLeft	1
+../Core/Src/motor.c:52:6:Motor_SetRight	1
+../Core/Src/motor.c:62:6:Motor_Set	1
+../Core/Src/motor.c:68:6:Motor_Brake	1
+../Core/Src/motor.c:75:6:Motor_Forward	1
+../Core/Src/motor.c:80:6:Motor_Backward	1
+../Core/Src/motor.c:85:6:Motor_TurnLeft	1
+../Core/Src/motor.c:90:6:Motor_TurnRight	1
+../Core/Src/motor.c:95:6:Motor_CheckTimeout	4

@@ -1,0 +1,2 @@
+../Core/Src/ui_task.c:22:12:clamp_i	24	static
+../Core/Src/ui_task.c:29:6:UITask	112	static
