@@ -46,7 +46,7 @@ enum MoveState {
 
 TurnState turnState = TURN_IDLE;
 float targetTurnAngle = 0.0f;
-const float turnTolerance = 3.0f;
+const float turnTolerance = 1.0f;
 unsigned long turnStartTime = 0;
 const unsigned long turnTimeout = 5000;
 

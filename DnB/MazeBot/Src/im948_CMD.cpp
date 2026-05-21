@@ -154,7 +154,7 @@ void initIMU900() {
     * @param compassFilter 磁力计滤波系数[取值0-9],数值越大越平稳但实时性越差
     * @param Cmd_ReportTag 功能订阅标识
     */
-  Cmd_12(3, 0, 0, 0, 3, 2, 250, 4, 9, 0xFFF); // 2 设置设备参数(内容1 stillToZero=0 不归零)
+  Cmd_12(3, 0, 0, 0, 3, 250, 2, 4, 9, 0xFFF); // 2 设置设备参数(内容1 stillToZero=0 不归零)
   Cmd_13();                                   // 3 三维空间位置清零
   Cmd_05();                                   // 4 AngleX Y Z 清零
   Cmd_19();                                   // 4 开启数据主动上报

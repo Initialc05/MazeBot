@@ -1627,7 +1627,6 @@ class LidarVisualizer:
             # 发送指令（需要加回车符）
             command_with_newline = command + '\n'
             self.serial.ser.write(command_with_newline.encode())
-            print(f"📤 发送指令: {command}")
             
         except Exception as e:
             print(f"❌ 发送指令失败: {e}")
@@ -1677,45 +1676,65 @@ class LidarVisualizer:
 
     def on_key_press(self, event):
         """Keyboard press event handler"""
+        key = (event.key or '').lower()
+        if '+' in key:
+            key = key.split('+')[-1]
+
         # === Direction keys control robot (hold to execute) ===
         # Only enable robot control in Bluetooth mode
         if USE_BLUETOOTH_MODE:
-            if event.key == 'up':
+            if key == 'up':
                 # ↑: Forward
                 if self.current_direction_key != 'up':
                     self.auto_enabled = False
                     self.send_motion_command('W')
                     self.current_direction_key = 'up'
 
-            elif event.key == 'down':
+            elif key == 'down':
                 # ↓: Backward
                 if self.current_direction_key != 'down':
                     self.auto_enabled = False
                     self.send_motion_command('S')
                     self.current_direction_key = 'down'
 
-            elif event.key == 'left':
+            elif key == 'left':
                 # ←: Turn left
                 if self.current_direction_key != 'left':
                     self.auto_enabled = False
                     self.send_motion_command('A')
                     self.current_direction_key = 'left'
 
-            elif event.key == 'right':
+            elif key == 'right':
                 # →: Turn right
                 if self.current_direction_key != 'right':
                     self.auto_enabled = False
                     self.send_motion_command('D')
                     self.current_direction_key = 'right'
 
-            elif event.key == ' ':
+            elif key == ' ':
                 # Space: Stop
                 self.auto_enabled = False
                 self.send_motion_command('x')
                 self.current_direction_key = None
+
+            elif key == 'l':
+                # L: precise left turn 90 degrees
+                self.auto_enabled = False
+                self.current_direction_key = None
+                self.send_motion_command('x')
+                self.send_precise_command('L90')
+                return
+
+            elif key == 'r':
+                # R: precise right turn 90 degrees
+                self.auto_enabled = False
+                self.current_direction_key = None
+                self.send_motion_command('x')
+                self.send_precise_command('R90')
+                return
         
         # === 地图管理快捷键 ===
-        elif event.key == 's':
+        elif key == 's':
             # S: Save map
             print("\n💾 Saving map...")
             metadata = {
@@ -1729,7 +1748,7 @@ class LidarVisualizer:
                 metadata=metadata
             )
             
-        elif event.key == 'l':
+        elif key == 'l':
             # L: List saved maps
             print("\n" + "="*50)
             saved_maps = MapManager.list_saved_maps()
@@ -1737,7 +1756,7 @@ class LidarVisualizer:
                 print("\n💡 Tip: Use these files for map analysis")
             print("="*50)
             
-        elif event.key == 'c':
+        elif key == 'c':
             # C: Clear map
             print("\n🗑️  Clearing map...")
             self.lidar_data.grid_map = np.zeros((MAP_SIZE, MAP_SIZE), dtype=np.int8)
@@ -1745,7 +1764,7 @@ class LidarVisualizer:
             self.lidar_data.scan_count = 0
             print("✅ Map cleared")
             
-        elif event.key == 'd':
+        elif key == 'd':
             # D: Toggle debug mode
             self.slam.DEBUG_MODE = not self.slam.DEBUG_MODE
             status = "✅ ON" if self.slam.DEBUG_MODE else "❌ OFF"
@@ -1754,40 +1773,40 @@ class LidarVisualizer:
                 print("   Will display: Lidar angle conversion, IMU angle, fused angle")
         
         # 🔧 距离缩放因子实时调整
-        elif event.key == '=' or event.key == 'plus':
+        elif key == '=' or key == 'plus':
             # + (=) key: 增加距离缩放因子
             self.adjust_distance_scale(0.01)
             
-        elif event.key == '-' or event.key == 'minus':
+        elif key == '-' or key == 'minus':
             # - key: 减少距离缩放因子
             self.adjust_distance_scale(-0.01)
             
-        elif event.key == '0':
+        elif key == '0':
             # 0 key: 重置距离缩放因子
             self.reset_distance_scale()
         
         # 🔧 近距离非线性校正调整
-        elif event.key == '[':
+        elif key == '[':
             # [ key: 减小近距离校正系数（向内收缩，修正外凸）
             self.adjust_near_correction(-0.02)
             
-        elif event.key == ']':
+        elif key == ']':
             # ] key: 增加近距离校正系数（向外扩展）
             self.adjust_near_correction(0.02)
             
-        elif event.key == 'n':
+        elif key == 'n':
             # N key: 切换非线性校正开关
             self.toggle_nonlinear_correction()
             
-        elif event.key == 'r':
+        elif key == 'r':
             # R key: 切换旋转滤波开关
             self.toggle_rotation_filter()
             
-        elif event.key == 'w':
+        elif key == 'w':
             # W key: 切换墙保护开关
             self.toggle_wall_protection()
                 
-        elif event.key == 'q':
+        elif key == 'q':
             # Q: Quit
             print("\n👋 Exiting program...")
             plt.close(self.fig)
@@ -1918,10 +1937,11 @@ def main():
         print("  Command Input: F[cm]=Forward, B[cm]=Backward, L[deg]=Left, R[deg]=Right")
         print("  Examples: F50 (forward 50cm), R90 (turn right 90°), L45 (turn left 45°)")
         print("  Quick Buttons: F10/F30/F50/F100, L90/L45/R45/R90")
+        print("  Keyboard L/R: L90/R90 precise turn in Bluetooth mode")
         print("  Press Enter or click 'Send' to execute command")
         print("\n🗺️  Map Management:")
         print("  S       : Save map")
-        print("  L       : List saved maps")
+        print("  L       : List saved maps (non-Bluetooth mode)")
         print("  C       : Clear current map")
         print("  D       : Toggle coordinate debug mode")
         print("  W       : Toggle wall protection (prevent wall erosion)")
