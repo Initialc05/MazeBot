@@ -13,6 +13,26 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.widgets import TextBox, Button
+
+# 禁用与自定义快捷键冲突的 matplotlib 默认 keymap
+# 否则按 L/R/S/Q 等会同时触发 matplotlib 默认行为（如切换 log 刻度、home、保存图、关闭窗口）
+for _key in ('l', 'L'):
+    if _key in plt.rcParams['keymap.yscale']:
+        plt.rcParams['keymap.yscale'].remove(_key)
+    if _key in plt.rcParams['keymap.xscale']:
+        plt.rcParams['keymap.xscale'].remove(_key)
+for _key in ('r',):
+    if _key in plt.rcParams['keymap.home']:
+        plt.rcParams['keymap.home'].remove(_key)
+for _key in ('s',):
+    if _key in plt.rcParams['keymap.save']:
+        plt.rcParams['keymap.save'].remove(_key)
+for _key in ('q',):
+    if _key in plt.rcParams['keymap.quit']:
+        plt.rcParams['keymap.quit'].remove(_key)
+for _key in ('k',):
+    if _key in plt.rcParams['keymap.xscale']:
+        plt.rcParams['keymap.xscale'].remove(_key)
 from collections import deque
 import time
 import json
