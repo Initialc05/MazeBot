@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import time
-from typing import Iterable, List, Optional, Tuple
+from typing import Callable, Iterable, List, Optional, Tuple
 
 
 AUTONAVI_DIR = os.path.join(os.path.dirname(__file__), "autonavi")
@@ -18,38 +18,50 @@ from maze_topology import MazeTopology
 from maze_types import MAZE_SIZE, Cell, Direction, WallState
 
 
-class AutoNavDryRun:
+class AutoNavRuntime:
     """
-    Non-invasive bridge for code review.
+    Runtime bridge for the upper-computer auto-navigation stack.
 
-    It constructs the real auto-navigation stack and calls the real A* planner,
-    but all outgoing motion commands are swallowed by _noop_send().
+    The real topology, localization, matcher, controller, navigator, and A*
+    planner are constructed here. Command output is controlled separately so
+    the planner can be mounted without taking control away from manual testing.
     """
 
-    def __init__(self, map_size: int, map_resolution: float, goal: Tuple[int, int] = (4, 4)):
+    def __init__(
+        self,
+        map_size: int,
+        map_resolution: float,
+        goal: Tuple[int, int] = (4, 4),
+        send_command: Optional[Callable[[str], None]] = None,
+        command_output_enabled: bool = False,
+    ):
         goal_row = max(0, min(MAZE_SIZE - 1, goal[0]))
         goal_col = max(0, min(MAZE_SIZE - 1, goal[1]))
         self.goal_cell = Cell(goal_row, goal_col)
         self.start_cell = Cell(0, 0)
+        self.command_output_enabled = command_output_enabled
+        self.serial_command_sender = send_command
 
         self.perception = MazePerception(map_size, map_resolution)
         self.topology = MazeTopology()
         self.matcher = MazeMatcher(map_size, map_resolution)
-        self.controller = MazeController(self._noop_send, self.perception)
+        self.controller = MazeController(self._send_autonav_command, self.perception)
         self.navigator = MazeNavigator(self.topology, self.perception, self.matcher, self.controller)
         self.navigator.configure_goal(self.goal_cell.row, self.goal_cell.col)
 
         self.last_tick = 0.0
         self.tick_interval = 0.5
-        self.last_noop_command: Optional[str] = None
+        self.last_command: Optional[str] = None
         self.last_path: List[Cell] = []
-        self.status = "A*dry:mounted"
+        self.status = "NAV:mounted"
 
         self._seed_open_reference_topology()
         self._refresh_static_plan()
 
-    def _noop_send(self, command: str) -> None:
-        self.last_noop_command = command
+    def _send_autonav_command(self, command: str) -> None:
+        self.last_command = command
+        if self.command_output_enabled and self.serial_command_sender is not None:
+            self.serial_command_sender(command)
 
     def _seed_open_reference_topology(self) -> None:
         for row in range(MAZE_SIZE):
@@ -62,7 +74,7 @@ class AutoNavDryRun:
     def _refresh_static_plan(self) -> None:
         self.last_path = self.topology.plan_path(self.start_cell, self.goal_cell, allow_unknown=False)
         self.navigator.current_plan = self.last_path
-        self.status = f"A*dry:{len(self.last_path)}cells"
+        self.status = f"NAV:{len(self.last_path)}cells"
 
     def tick(
         self,
@@ -92,9 +104,9 @@ class AutoNavDryRun:
             self.navigator.current_match = self.matcher.match_scan(grid_map, points, pose_world)
 
         if self.last_path:
-            self.status = f"A*dry:{len(self.last_path)}cells"
+            self.status = f"NAV:{len(self.last_path)}cells"
         else:
-            self.status = "A*dry:no-path"
+            self.status = "NAV:no-path"
         return self.status
 
     def short_status(self) -> str:

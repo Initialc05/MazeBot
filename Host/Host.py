@@ -23,11 +23,11 @@ import threading
 import queue
 
 try:
-    from autonav_dry_run import AutoNavDryRun
-    AUTONAV_DRY_RUN_IMPORT_ERROR = None
+    from autonav_runtime import AutoNavRuntime
+    AUTONAV_RUNTIME_IMPORT_ERROR = None
 except Exception as exc:
-    AutoNavDryRun = None
-    AUTONAV_DRY_RUN_IMPORT_ERROR = exc
+    AutoNavRuntime = None
+    AUTONAV_RUNTIME_IMPORT_ERROR = exc
 
 # ==================== 配置参数 ====================
 # 调试模式选择
@@ -43,9 +43,10 @@ else:
 
 PACKET_SIZE = 14  # 数据包大小（雷达+Odom）
 
-# 自动导航 dry-run 挂载：调用真实 A*/拓扑代码，但不向小车发送导航命令
-AUTO_NAV_DRY_RUN = True
-AUTO_NAV_DRY_RUN_GOAL = (4, 4)
+# 自动导航运行时：默认挂载真实 A*/拓扑代码，命令输出由开关控制
+AUTO_NAV_RUNTIME = True
+AUTO_NAV_GOAL = (4, 4)
+AUTO_NAV_COMMAND_OUTPUT = False
 
 # 地图参数
 MAP_SIZE = 500  # 栅格地图大小 (500x500)
@@ -925,14 +926,20 @@ class LidarVisualizer:
         # 🚀 扫描缓冲区（用于位姿插值校正）
         self.scan_buffer = ScanBuffer()
 
-        # Auto navigation dry-run: real planner objects, no serial command output.
-        self.autonav_dry_run = None
-        if AUTO_NAV_DRY_RUN:
-            if AutoNavDryRun is None:
-                print(f"⚠️  AutoNav dry-run unavailable: {AUTONAV_DRY_RUN_IMPORT_ERROR}")
+        # Auto navigation runtime: real planner objects, command output is switch-controlled.
+        self.autonav_runtime = None
+        if AUTO_NAV_RUNTIME:
+            if AutoNavRuntime is None:
+                print(f"⚠️  AutoNav runtime unavailable: {AUTONAV_RUNTIME_IMPORT_ERROR}")
             else:
-                self.autonav_dry_run = AutoNavDryRun(MAP_SIZE, MAP_RESOLUTION, AUTO_NAV_DRY_RUN_GOAL)
-                print(f"✅ AutoNav dry-run mounted: {self.autonav_dry_run.short_status()} (commands suppressed)")
+                self.autonav_runtime = AutoNavRuntime(
+                    MAP_SIZE,
+                    MAP_RESOLUTION,
+                    AUTO_NAV_GOAL,
+                    send_command=lambda command: self.serial.ser.write(command.encode()),
+                    command_output_enabled=AUTO_NAV_COMMAND_OUTPUT,
+                )
+                print(f"✅ AutoNav runtime mounted: {self.autonav_runtime.short_status()}")
         
         # 🚀 共享Odom数据（线程安全，零延迟更新）
         self.shared_odom = SharedOdomData() if USE_SEPARATE_ODOM_THREAD else None
@@ -1532,7 +1539,7 @@ class LidarVisualizer:
             points_info = f"{total_points}"
 
         autonav_status = ""
-        if self.autonav_dry_run is not None:
+        if self.autonav_runtime is not None:
             recent_scan_points = []
             common_len = min(len(self.lidar_data.angles), len(self.lidar_data.distances), len(self.lidar_data.qualities))
             if common_len > 0:
@@ -1542,7 +1549,7 @@ class LidarVisualizer:
                     (self.lidar_data.angles[i], self.lidar_data.distances[i], self.lidar_data.qualities[i])
                     for i in range(start, common_len, step)
                 ]
-            autonav_status = self.autonav_dry_run.tick(current_odom, self.lidar_data.grid_map, recent_scan_points)
+            autonav_status = self.autonav_runtime.tick(current_odom, self.lidar_data.grid_map, recent_scan_points)
         
         if current_odom:
             # 🔄 统一坐标系：将IMU坐标转换为显示坐标系（与地图一致）
