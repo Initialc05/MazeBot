@@ -27,6 +27,7 @@
 #include "motor.h"
 #include "encoder.h"
 #include "bt_cmd.h"
+#include "autonav.h"
 #include "robot_state.h"
 #include "potentiometer.h"
 /* USER CODE END Includes */
@@ -90,6 +91,7 @@ extern void CommandTask(void const *argument);
 extern void MotorControlTask(void const *argument);
 extern void IMU900Task(void const *argument);
 extern void LidarTask(void const *argument);
+extern void AutoNavTask(void const *argument);
 extern void ButtonTask(void const *argument);
 extern void UITask(void const *argument);
 /* USER CODE END PFP */
@@ -145,6 +147,7 @@ int main(void)
   RobotState_Init();
   Pot_Init();
   BtCmd_Init();
+  AutoNav_Init();
   printf("MazeBot_MSD started\r\n");
   /* USER CODE END 2 */
 
@@ -185,6 +188,10 @@ int main(void)
   /* LidarTask: RPLIDAR扫描数据处理, 2ms周期, 优先级Normal */
   osThreadDef(lidarTask, LidarTask, osPriorityNormal, 0, 512);
   osThreadCreate(osThread(lidarTask), NULL);
+
+  /* AutoNavTask: embedded Sense-Think-Act navigation, 50ms cycle */
+  osThreadDef(autoNavTask, AutoNavTask, osPriorityNormal, 0, 768);
+  osThreadCreate(osThread(autoNavTask), NULL);
 
   /* ButtonTask: 按钮消抖+E-STOP复位, 20ms周期, 优先级Normal */
   osThreadDef(btnTask, ButtonTask, osPriorityNormal, 0, 256);

@@ -1,5 +1,5 @@
 Core/Src/ui_task.o: ../Core/Src/ui_task.c ../Core/Inc/ui_task.h \
- ../Core/Inc/ssd1306.h ../Core/Inc/potentiometer.h \
+ ../Core/Inc/autonav.h ../Core/Inc/ssd1306.h ../Core/Inc/potentiometer.h \
  ../Core/Inc/robot_state.h ../Core/Inc/encoder.h ../Core/Inc/main.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h \
  ../Core/Inc/stm32f4xx_hal_conf.h \
@@ -53,6 +53,7 @@ Core/Src/ui_task.o: ../Core/Src/ui_task.c ../Core/Inc/ui_task.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/event_groups.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/timers.h
 ../Core/Inc/ui_task.h:
+../Core/Inc/autonav.h:
 ../Core/Inc/ssd1306.h:
 ../Core/Inc/potentiometer.h:
 ../Core/Inc/robot_state.h:

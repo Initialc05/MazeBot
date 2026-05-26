@@ -9,6 +9,7 @@
  *   - delay() → osDelay()
  */
 #include "lidar.h"
+#include "autonav.h"
 #include "uart_device.h"
 #include "im948.h"
 #include "encoder.h"
@@ -43,6 +44,11 @@ static void parseLidarNode(void)
     /* 过滤 */
     if (quality < LIDAR_QUALITY_MIN || dist_mm > LIDAR_DIST_MAX_MM || dist_mm < LIDAR_DIST_MIN_MM)
         return;
+
+    if (sync_bit) {
+        AutoNav_NotifyScanStart();
+    }
+    AutoNav_ObserveLidar(angle_deg, dist_mm, quality);
 
     /* 构建18字节融合包 */
     LidarBtPacket pkt;

@@ -5,6 +5,7 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../Core/Src/autonav.c \
 ../Core/Src/bt_cmd.c \
 ../Core/Src/button.c \
 ../Core/Src/encoder.c \
@@ -26,6 +27,7 @@ C_SRCS += \
 ../Core/Src/ui_task.c 
 
 OBJS += \
+./Core/Src/autonav.o \
 ./Core/Src/bt_cmd.o \
 ./Core/Src/button.o \
 ./Core/Src/encoder.o \
@@ -47,6 +49,7 @@ OBJS += \
 ./Core/Src/ui_task.o 
 
 C_DEPS += \
+./Core/Src/autonav.d \
 ./Core/Src/bt_cmd.d \
 ./Core/Src/button.d \
 ./Core/Src/encoder.d \
@@ -75,7 +78,7 @@ Core/Src/%.o Core/Src/%.su Core/Src/%.cyclo: ../Core/Src/%.c Core/Src/subdir.mk
 clean: clean-Core-2f-Src
 
 clean-Core-2f-Src:
-	-$(RM) ./Core/Src/bt_cmd.cyclo ./Core/Src/bt_cmd.d ./Core/Src/bt_cmd.o ./Core/Src/bt_cmd.su ./Core/Src/button.cyclo ./Core/Src/button.d ./Core/Src/button.o ./Core/Src/button.su ./Core/Src/encoder.cyclo ./Core/Src/encoder.d ./Core/Src/encoder.o ./Core/Src/encoder.su ./Core/Src/freertos.cyclo ./Core/Src/freertos.d ./Core/Src/freertos.o ./Core/Src/freertos.su ./Core/Src/im948.cyclo ./Core/Src/im948.d ./Core/Src/im948.o ./Core/Src/im948.su ./Core/Src/lidar.cyclo ./Core/Src/lidar.d ./Core/Src/lidar.o ./Core/Src/lidar.su ./Core/Src/main.cyclo ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/motor.cyclo ./Core/Src/motor.d ./Core/Src/motor.o ./Core/Src/motor.su ./Core/Src/pid.cyclo ./Core/Src/pid.d ./Core/Src/pid.o ./Core/Src/pid.su ./Core/Src/potentiometer.cyclo ./Core/Src/potentiometer.d ./Core/Src/potentiometer.o ./Core/Src/potentiometer.su ./Core/Src/robot_state.cyclo ./Core/Src/robot_state.d ./Core/Src/robot_state.o ./Core/Src/robot_state.su ./Core/Src/ssd1306.cyclo ./Core/Src/ssd1306.d ./Core/Src/ssd1306.o ./Core/Src/ssd1306.su ./Core/Src/stm32f4xx_hal_msp.cyclo ./Core/Src/stm32f4xx_hal_msp.d ./Core/Src/stm32f4xx_hal_msp.o ./Core/Src/stm32f4xx_hal_msp.su ./Core/Src/stm32f4xx_it.cyclo ./Core/Src/stm32f4xx_it.d ./Core/Src/stm32f4xx_it.o ./Core/Src/stm32f4xx_it.su ./Core/Src/syscalls.cyclo ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.cyclo ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32f4xx.cyclo ./Core/Src/system_stm32f4xx.d ./Core/Src/system_stm32f4xx.o ./Core/Src/system_stm32f4xx.su ./Core/Src/uart_device.cyclo ./Core/Src/uart_device.d ./Core/Src/uart_device.o ./Core/Src/uart_device.su ./Core/Src/ui_task.cyclo ./Core/Src/ui_task.d ./Core/Src/ui_task.o ./Core/Src/ui_task.su
+	-$(RM) ./Core/Src/autonav.cyclo ./Core/Src/autonav.d ./Core/Src/autonav.o ./Core/Src/autonav.su ./Core/Src/bt_cmd.cyclo ./Core/Src/bt_cmd.d ./Core/Src/bt_cmd.o ./Core/Src/bt_cmd.su ./Core/Src/button.cyclo ./Core/Src/button.d ./Core/Src/button.o ./Core/Src/button.su ./Core/Src/encoder.cyclo ./Core/Src/encoder.d ./Core/Src/encoder.o ./Core/Src/encoder.su ./Core/Src/freertos.cyclo ./Core/Src/freertos.d ./Core/Src/freertos.o ./Core/Src/freertos.su ./Core/Src/im948.cyclo ./Core/Src/im948.d ./Core/Src/im948.o ./Core/Src/im948.su ./Core/Src/lidar.cyclo ./Core/Src/lidar.d ./Core/Src/lidar.o ./Core/Src/lidar.su ./Core/Src/main.cyclo ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/motor.cyclo ./Core/Src/motor.d ./Core/Src/motor.o ./Core/Src/motor.su ./Core/Src/pid.cyclo ./Core/Src/pid.d ./Core/Src/pid.o ./Core/Src/pid.su ./Core/Src/potentiometer.cyclo ./Core/Src/potentiometer.d ./Core/Src/potentiometer.o ./Core/Src/potentiometer.su ./Core/Src/robot_state.cyclo ./Core/Src/robot_state.d ./Core/Src/robot_state.o ./Core/Src/robot_state.su ./Core/Src/ssd1306.cyclo ./Core/Src/ssd1306.d ./Core/Src/ssd1306.o ./Core/Src/ssd1306.su ./Core/Src/stm32f4xx_hal_msp.cyclo ./Core/Src/stm32f4xx_hal_msp.d ./Core/Src/stm32f4xx_hal_msp.o ./Core/Src/stm32f4xx_hal_msp.su ./Core/Src/stm32f4xx_it.cyclo ./Core/Src/stm32f4xx_it.d ./Core/Src/stm32f4xx_it.o ./Core/Src/stm32f4xx_it.su ./Core/Src/syscalls.cyclo ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.cyclo ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32f4xx.cyclo ./Core/Src/system_stm32f4xx.d ./Core/Src/system_stm32f4xx.o ./Core/Src/system_stm32f4xx.su ./Core/Src/uart_device.cyclo ./Core/Src/uart_device.d ./Core/Src/uart_device.o ./Core/Src/uart_device.su ./Core/Src/ui_task.cyclo ./Core/Src/ui_task.d ./Core/Src/ui_task.o ./Core/Src/ui_task.su
 
 .PHONY: clean-Core-2f-Src
 

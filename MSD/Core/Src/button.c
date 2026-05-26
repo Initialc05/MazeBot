@@ -3,6 +3,7 @@
  * @brief GPIO 初始化、EXTI E-STOP、轮询消抖、ButtonTask
  */
 #include "button.h"
+#include "autonav.h"
 #include "robot_state.h"
 #include "main.h"
 #include "cmsis_os.h"
@@ -107,10 +108,10 @@ void ButtonTask(void const *argument)
 
         /* 正常按钮事件处理 */
         if (evt_start == BTN_EVENT_PRESSED) {
-            RobotState_Set(ROBOT_EXPLORING);
+            AutoNav_StartToExit();
         }
         if (evt_return == BTN_EVENT_PRESSED) {
-            RobotState_Set(ROBOT_RETURNING);
+            AutoNav_ReturnToStart();
         }
         if (evt_mode == BTN_EVENT_PRESSED) {
             /* 模式切换: EXPLORING <-> NAVIGATING */

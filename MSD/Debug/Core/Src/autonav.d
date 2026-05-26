@@ -1,5 +1,6 @@
-Core/Src/lidar.o: ../Core/Src/lidar.c ../Core/Inc/lidar.h \
- ../Core/Inc/main.h ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h \
+Core/Src/autonav.o: ../Core/Src/autonav.c ../Core/Inc/autonav.h \
+ ../Core/Inc/bt_cmd.h ../Core/Inc/main.h \
+ ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h \
  ../Core/Inc/stm32f4xx_hal_conf.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_rcc.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h \
@@ -32,8 +33,6 @@ Core/Src/lidar.o: ../Core/Src/lidar.c ../Core/Inc/lidar.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h \
- ../Core/Inc/autonav.h ../Core/Inc/uart_device.h ../Core/Inc/im948.h \
- ../Core/Inc/encoder.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS/cmsis_os.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/FreeRTOS.h \
  ../Core/Inc/FreeRTOSConfig.h \
@@ -50,8 +49,11 @@ Core/Src/lidar.o: ../Core/Src/lidar.c ../Core/Inc/lidar.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/semphr.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/queue.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/event_groups.h \
- ../Middlewares/Third_Party/FreeRTOS/Source/include/timers.h
-../Core/Inc/lidar.h:
+ ../Middlewares/Third_Party/FreeRTOS/Source/include/timers.h \
+ ../Core/Inc/encoder.h ../Core/Inc/im948.h ../Core/Inc/robot_state.h \
+ ../Core/Inc/uart_device.h
+../Core/Inc/autonav.h:
+../Core/Inc/bt_cmd.h:
 ../Core/Inc/main.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
 ../Core/Inc/stm32f4xx_hal_conf.h:
@@ -86,10 +88,6 @@ Core/Src/lidar.o: ../Core/Src/lidar.c ../Core/Inc/lidar.h \
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h:
-../Core/Inc/autonav.h:
-../Core/Inc/uart_device.h:
-../Core/Inc/im948.h:
-../Core/Inc/encoder.h:
 ../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS/cmsis_os.h:
 ../Middlewares/Third_Party/FreeRTOS/Source/include/FreeRTOS.h:
 ../Core/Inc/FreeRTOSConfig.h:
@@ -107,3 +105,7 @@ Core/Src/lidar.o: ../Core/Src/lidar.c ../Core/Inc/lidar.h \
 ../Middlewares/Third_Party/FreeRTOS/Source/include/queue.h:
 ../Middlewares/Third_Party/FreeRTOS/Source/include/event_groups.h:
 ../Middlewares/Third_Party/FreeRTOS/Source/include/timers.h:
+../Core/Inc/encoder.h:
+../Core/Inc/im948.h:
+../Core/Inc/robot_state.h:
+../Core/Inc/uart_device.h:

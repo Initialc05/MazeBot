@@ -32,9 +32,9 @@ Core/Src/bt_cmd.o: ../Core/Src/bt_cmd.c ../Core/Inc/bt_cmd.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h \
- ../Core/Inc/motor.h ../Core/Inc/encoder.h ../Core/Inc/pid.h \
- ../Core/Inc/im948.h ../Core/Inc/uart_device.h ../Core/Inc/robot_state.h \
- ../Core/Inc/potentiometer.h
+ ../Core/Inc/autonav.h ../Core/Inc/motor.h ../Core/Inc/encoder.h \
+ ../Core/Inc/pid.h ../Core/Inc/im948.h ../Core/Inc/uart_device.h \
+ ../Core/Inc/robot_state.h ../Core/Inc/potentiometer.h
 ../Core/Inc/bt_cmd.h:
 ../Core/Inc/main.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
@@ -70,6 +70,7 @@ Core/Src/bt_cmd.o: ../Core/Src/bt_cmd.c ../Core/Inc/bt_cmd.h \
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h:
+../Core/Inc/autonav.h:
 ../Core/Inc/motor.h:
 ../Core/Inc/encoder.h:
 ../Core/Inc/pid.h:

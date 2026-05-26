@@ -8,5 +8,5 @@ MazeBot_MSD/.settings
 # Python cache
 Host/__pycache__/
 
-# Claude Code
-.claude/
+# Design and Build
+DnB/

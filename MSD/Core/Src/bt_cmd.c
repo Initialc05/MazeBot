@@ -3,6 +3,7 @@
  * @brief 蓝牙命令解析 + 运动状态机 + 级联PID控制
  */
 #include "bt_cmd.h"
+#include "autonav.h"
 #include "motor.h"
 #include "encoder.h"
 #include "pid.h"
@@ -200,6 +201,23 @@ void BtCmd_ProcessByte(char cmd)
 
     /* 换行清空无效缓冲 */
     if (cmd == '\n' || cmd == '\r') {
+        cmdBufLen = 0;
+        return;
+    }
+
+    if (cmd == 'g' || cmd == 'G') {
+        AutoNav_StartToExit();
+        cmdBufLen = 0;
+        return;
+    }
+    if (cmd == 'h' || cmd == 'H') {
+        AutoNav_ReturnToStart();
+        cmdBufLen = 0;
+        return;
+    }
+    if (cmd == 'n' || cmd == 'N') {
+        AutoNav_Stop();
+        RobotState_Set(ROBOT_IDLE);
         cmdBufLen = 0;
         return;
     }

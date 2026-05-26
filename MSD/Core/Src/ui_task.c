@@ -3,6 +3,7 @@
  * @brief OLED 显示刷新任务 (200ms) + Pot_Update()
  */
 #include "ui_task.h"
+#include "autonav.h"
 #include "ssd1306.h"
 #include "potentiometer.h"
 #include "robot_state.h"
@@ -72,15 +73,24 @@ void UITask(void const *argument)
                  h10 / 10, abs(h10 % 10), v0);
         SSD1306_WriteString(0, 4, line);
 
-        /* 第3行: 电位器参数 */
-        int kp10 = (int)lroundf(g_pot_values.kp_heading * 10.0f);
-        int b0   = (int)lroundf(g_pot_values.base_duty);
-        int t0   = (int)lroundf(g_pot_values.turn_duty);
-        kp10 = clamp_i(kp10, 0, 99);   /* 0.0 ~ 9.9 */
-        b0   = clamp_i(b0, 0, 99);
-        t0   = clamp_i(t0, 0, 99);
-        snprintf(line, sizeof(line), "Kp:%1d.%1d B:%02d T:%02d",
-                 kp10 / 10, abs(kp10 % 10), b0, t0);
+        /* 第3行: AutoNav状态优先, 空闲时显示电位器参数 */
+        if (AutoNav_IsActive()) {
+            AutoNavMetrics_t nav_m;
+            AutoNav_GetMetrics(&nav_m);
+            snprintf(line, sizeof(line), "NAV:%s C%d%d M%02d",
+                     AutoNav_StateName(AutoNav_GetState()),
+                     nav_m.cell_x, nav_m.cell_y,
+                     clamp_i((int)lroundf(nav_m.match_score), 0, 99));
+        } else {
+            int kp10 = (int)lroundf(g_pot_values.kp_heading * 10.0f);
+            int b0   = (int)lroundf(g_pot_values.base_duty);
+            int t0   = (int)lroundf(g_pot_values.turn_duty);
+            kp10 = clamp_i(kp10, 0, 99);   /* 0.0 ~ 9.9 */
+            b0   = clamp_i(b0, 0, 99);
+            t0   = clamp_i(t0, 0, 99);
+            snprintf(line, sizeof(line), "Kp:%1d.%1d B:%02d T:%02d",
+                     kp10 / 10, abs(kp10 % 10), b0, t0);
+        }
         SSD1306_WriteString(0, 6, line);
 
         SSD1306_Update();
