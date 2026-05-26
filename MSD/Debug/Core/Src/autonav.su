@@ -24,7 +24,7 @@
 ../Core/Src/autonav.c:416:14:dir_clearance	24	static
 ../Core/Src/autonav.c:422:14:estimate_wall_angle_error	32	static
 ../Core/Src/autonav.c:444:16:update_edge	40	static
-../Core/Src/autonav.c:462:13:collect_metrics	56	static
+../Core/Src/autonav.c:462:13:collect_metrics	64	static
 ../Core/Src/autonav.c:506:13:update_topology_from_metrics	32	static
 ../Core/Src/autonav.c:524:13:edge_passable	40	static
 ../Core/Src/autonav.c:543:13:astar_plan	416	static

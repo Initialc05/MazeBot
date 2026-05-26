@@ -12,4 +12,4 @@
 ../Core/Src/main.c:699:13:MX_DMA_Init	16	static
 ../Core/Src/main.c:730:13:MX_GPIO_Init	48	static
 ../Core/Src/main.c:781:6:StartDefaultTask	16	static
-../Core/Src/main.c:796:6:Error_Handler	4	static
+../Core/Src/main.c:796:6:Error_Handler	4	static,ignoring_inline_asm

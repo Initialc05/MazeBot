@@ -37,7 +37,11 @@ void UITask(void const *argument)
     } else {
         printf("[UI] SSD1306 init OK\r\n");
     }
-    char line[22]; /* 128/6 = 21 字符 + '\0' */
+    /*
+     * OLED visible width is 21 chars, but keep the formatting buffer larger so
+     * GCC can prove snprintf cannot truncate after integer range analysis.
+     */
+    char line[48];
 
     for (;;) {
         /* 更新电位器 EMA 滤波 + 参数映射 */

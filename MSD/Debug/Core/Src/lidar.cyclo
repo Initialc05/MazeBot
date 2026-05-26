@@ -1,6 +1,6 @@
-../Core/Src/lidar.c:24:13:Lidar_SendCmd	1
-../Core/Src/lidar.c:31:13:parseLidarNode	6
-../Core/Src/lidar.c:82:6:Lidar_Init	5
-../Core/Src/lidar.c:122:6:Lidar_Update	9
-../Core/Src/lidar.c:162:6:Lidar_Stop	1
-../Core/Src/lidar.c:173:6:Lidar_Restart	1
+../Core/Src/lidar.c:25:13:Lidar_SendCmd	1
+../Core/Src/lidar.c:32:13:parseLidarNode	7
+../Core/Src/lidar.c:88:6:Lidar_Init	5
+../Core/Src/lidar.c:128:6:Lidar_Update	9
+../Core/Src/lidar.c:168:6:Lidar_Stop	1
+../Core/Src/lidar.c:179:6:Lidar_Restart	1
