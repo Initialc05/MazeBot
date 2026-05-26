@@ -21,7 +21,7 @@
 /* ==================== 过滤参数 ==================== */
 #define LIDAR_QUALITY_MIN       5
 #define LIDAR_DIST_MIN_MM       200    /* 20cm */
-#define LIDAR_DIST_MAX_MM       1500   /* 1.5m */
+#define LIDAR_DIST_MAX_MM       3500   /* 3.5m: enough to observe a 5x5 70cm maze span */
 
 /* ==================== 融合数据包 (18字节) ==================== */
 typedef struct __attribute__((packed)) {

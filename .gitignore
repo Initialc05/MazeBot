@@ -13,7 +13,7 @@ MSD/Debug/*.stdout
 MSD/Release/
 
 # Eclipse/CubeIDE metadata
-MazeBot_MSD/.settings
+MSD/.settings
 .metadata/
 
 # Python cache

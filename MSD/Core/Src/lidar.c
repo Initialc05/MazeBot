@@ -41,6 +41,8 @@ static void parseLidarNode(void)
     float angle_deg   = angle_q6 / 64.0f;
     uint16_t dist_mm  = distance_q2 / 4;
 
+    AutoNav_NotifyLidarActivity();
+
     /* 过滤 */
     if (quality < LIDAR_QUALITY_MIN || dist_mm > LIDAR_DIST_MAX_MM || dist_mm < LIDAR_DIST_MIN_MM)
         return;

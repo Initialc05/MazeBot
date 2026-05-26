@@ -71,6 +71,7 @@ void AutoNav_Stop(void);
 void AutoNav_Tick(void);
 void AutoNavTask(void const *argument);
 
+void AutoNav_NotifyLidarActivity(void);
 void AutoNav_ObserveLidar(float angle_deg, uint16_t distance_mm, uint8_t quality);
 void AutoNav_NotifyScanStart(void);
 

@@ -8,6 +8,7 @@
 #include "cmsis_os.h"
 #include "encoder.h"
 #include "im948.h"
+#include "motor.h"
 #include "robot_state.h"
 #include "task.h"
 #include "uart_device.h"
@@ -22,10 +23,10 @@
 #endif
 
 /* Geometry tuned for the coursework 5x5 orthogonal maze demo. */
-#define AUTONAV_CELL_SIZE_M          0.30f
+#define AUTONAV_CELL_SIZE_M          0.70f
 #define AUTONAV_GOAL_CENTER_TOL_M    0.20f
-#define AUTONAV_FRONT_CLEAR_M        0.35f
-#define AUTONAV_FRONT_DANGER_M       0.18f
+#define AUTONAV_FRONT_CLEAR_M        0.60f
+#define AUTONAV_FRONT_DANGER_M       0.28f
 #define AUTONAV_SIDE_SAFE_M          0.22f
 #define AUTONAV_SIDE_ADJUST_M        0.20f
 #define AUTONAV_HEADING_TOL_DEG      8.0f
@@ -37,13 +38,19 @@
 #define AUTONAV_DRY_MOVE_MS          450U
 #define AUTONAV_DRY_ADJUST_MS        250U
 #define AUTONAV_SCAN_MIN_POINTS      10U
+#define AUTONAV_TOPO_WALL_M          0.50f
+#define AUTONAV_TOPO_OPEN_M          0.80f
+#define AUTONAV_LIDAR_TIMEOUT_MS     1000U
+#define AUTONAV_START_SENSOR_GRACE_MS 1500U
+#define AUTONAV_ENCODER_STALL_MS     700U
+#define AUTONAV_STALL_TICK_DELTA     3
 
 /* RPLIDAR mounting offset: 0 deg is treated as the robot forward direction. */
 #define AUTONAV_LIDAR_FORWARD_DEG    0.0f
 
-/* OGM is small enough for F446 SRAM and large enough for a 5x5 demo maze. */
-#define OGM_W                        64
-#define OGM_H                        64
+/* 160 * 5cm = 8m, enough for a start-centred 5x5 maze with 70cm cells. */
+#define OGM_W                        160
+#define OGM_H                        160
 #define OGM_RES_M                    0.05f
 #define OGM_OCC_INC                  6
 #define OGM_FREE_DEC                 2
@@ -53,7 +60,7 @@
 
 #define SECTOR_COUNT                 36
 #define SECTOR_WIDTH_DEG             10.0f
-#define SECTOR_RANGE_MAX_M           2.00f
+#define SECTOR_RANGE_MAX_M           3.50f
 #define SCAN_POINT_MAX               72
 #define PATH_MAX_CELLS               (AUTONAV_CELL_COUNT * AUTONAV_CELL_COUNT)
 
@@ -138,8 +145,14 @@ static NavDir_t g_target_dir = DIR_EAST;
 
 static uint32_t g_state_enter_ms;
 static uint32_t g_last_status_ms;
+static uint32_t g_nav_start_ms;
+static uint32_t g_last_lidar_ms;
+static uint32_t g_stall_last_motion_ms;
+static int32_t g_stall_left_ticks;
+static int32_t g_stall_right_ticks;
 static uint8_t g_stable_goal_count;
 static bool g_action_started;
+static bool g_stall_monitor_active;
 static uint8_t g_wall_adjust_phase;
 
 static float g_origin_x_m;
@@ -679,7 +692,7 @@ static void collect_metrics(AutoNavMetrics_t *m)
     uint8_t open_count = 0;
     for (uint8_t d = 0; d < DIR_COUNT; d++) {
         Clearance_t clear = dir_clearance_ex((NavDir_t)d, pose_yaw);
-        if (clear.observed && clear.distance_m > 0.34f) {
+        if (clear.observed && clear.distance_m > AUTONAV_TOPO_OPEN_M) {
             open_mask |= (uint8_t)(1U << d);
             open_count++;
         }
@@ -703,9 +716,9 @@ static void update_topology_from_metrics(const AutoNavMetrics_t *m)
         if (!clear.observed) {
             continue;
         }
-        if (clear.distance_m < 0.26f) {
+        if (clear.distance_m < AUTONAV_TOPO_WALL_M) {
             update_edge(c, (NavDir_t)d, EDGE_WALL);
-        } else if (clear.distance_m > 0.38f) {
+        } else if (clear.distance_m > AUTONAV_TOPO_OPEN_M) {
             update_edge(c, (NavDir_t)d, EDGE_OPEN);
         }
     }
@@ -980,9 +993,99 @@ static void enter_state(AutoNavState_t state)
     }
 }
 
+static void reset_encoder_stall_monitor(void)
+{
+    g_stall_monitor_active = false;
+    g_stall_last_motion_ms = HAL_GetTick();
+    g_stall_left_ticks = encoder_left_ticks;
+    g_stall_right_ticks = encoder_right_ticks;
+}
+
+static void enter_fault(const char *reason)
+{
+    char line[AUTONAV_STATUS_LEN];
+    snprintf(line, sizeof(line), "NAV:FAULT %s", reason);
+    publish_status(line, true);
+
+#if AUTONAV_COMMAND_OUTPUT
+    BtCmd_ProcessByte('x');
+#endif
+    Motor_Brake();
+    RobotState_Set(ROBOT_FAULT);
+    g_mode = AUTONAV_OFF;
+    enter_state(AUTONAV_STATE_OFF);
+}
+
+static bool lidar_timeout_fault(uint32_t now)
+{
+#if AUTONAV_DRY_RUN
+    (void)now;
+    return false;
+#else
+    if (now - g_nav_start_ms < AUTONAV_START_SENSOR_GRACE_MS) {
+        return false;
+    }
+    return (g_last_lidar_ms == 0U) ||
+           (now - g_last_lidar_ms > AUTONAV_LIDAR_TIMEOUT_MS);
+#endif
+}
+
+static bool encoder_stall_fault(uint32_t now)
+{
+#if AUTONAV_DRY_RUN || !AUTONAV_COMMAND_OUTPUT
+    (void)now;
+    return false;
+#else
+    bool motion_active = (moveState == MOVE_RUNNING) || (turnState == TURN_ROTATING);
+    if (!motion_active) {
+        g_stall_monitor_active = false;
+        return false;
+    }
+
+    int32_t left_now = encoder_left_ticks;
+    int32_t right_now = encoder_right_ticks;
+    if (!g_stall_monitor_active) {
+        g_stall_left_ticks = left_now;
+        g_stall_right_ticks = right_now;
+        g_stall_last_motion_ms = now;
+        g_stall_monitor_active = true;
+        return false;
+    }
+
+    int32_t dl = left_now - g_stall_left_ticks;
+    int32_t dr = right_now - g_stall_right_ticks;
+    if (dl < 0) dl = -dl;
+    if (dr < 0) dr = -dr;
+
+    if ((dl + dr) >= AUTONAV_STALL_TICK_DELTA) {
+        g_stall_left_ticks = left_now;
+        g_stall_right_ticks = right_now;
+        g_stall_last_motion_ms = now;
+        return false;
+    }
+
+    return (now - g_stall_last_motion_ms > AUTONAV_ENCODER_STALL_MS);
+#endif
+}
+
+static bool check_runtime_faults(void)
+{
+    uint32_t now = HAL_GetTick();
+    if (lidar_timeout_fault(now)) {
+        enter_fault("lidar_timeout");
+        return true;
+    }
+    if (encoder_stall_fault(now)) {
+        enter_fault("encoder_stall");
+        return true;
+    }
+    return false;
+}
+
 static void issue_turn_to_dir(NavDir_t dir)
 {
     float delta = yaw_error_deg(current_nav_yaw(), dir_yaw_deg[dir]);
+    reset_encoder_stall_monitor();
 #if AUTONAV_COMMAND_OUTPUT
     BtCmd_ExecutePreciseTurn(delta);
 #else
@@ -992,6 +1095,7 @@ static void issue_turn_to_dir(NavDir_t dir)
 
 static void issue_move_cell(void)
 {
+    reset_encoder_stall_monitor();
 #if AUTONAV_COMMAND_OUTPUT
     BtCmd_ExecutePreciseMove(AUTONAV_CELL_SIZE_M * 100.0f, 1);
 #endif
@@ -999,6 +1103,7 @@ static void issue_move_cell(void)
 
 static void issue_micro_adjust(float correction_deg)
 {
+    reset_encoder_stall_monitor();
 #if AUTONAV_COMMAND_OUTPUT
     BtCmd_ExecutePreciseTurn(correction_deg);
 #else
@@ -1009,6 +1114,7 @@ static void issue_micro_adjust(float correction_deg)
 #if AUTONAV_COMMAND_OUTPUT
 static void issue_micro_forward(void)
 {
+    reset_encoder_stall_monitor();
     BtCmd_ExecutePreciseMove(12.0f, 1);
 }
 #endif
@@ -1044,16 +1150,19 @@ static float start_yaw_for_mode(AutoNavMode_t mode)
 
 static void start_mode(AutoNavMode_t mode)
 {
+    uint32_t now = HAL_GetTick();
     g_mode = mode;
     select_goal_for_mode(mode);
     Cell_t start = start_cell_for_mode(mode);
     float start_yaw = start_yaw_for_mode(mode);
     capture_nav_origin_at(start, start_yaw);
+    g_nav_start_ms = now;
     g_dry_cell = start;
     g_dry_yaw_deg = start_yaw;
     g_stable_goal_count = 0U;
     g_path_len = 0U;
     g_target_dir = quantize_heading(start_yaw);
+    reset_encoder_stall_monitor();
     enter_state(AUTONAV_LOCALIZE_START);
 
     if (mode == AUTONAV_START_TO_EXIT) {
@@ -1313,6 +1422,9 @@ void AutoNav_Init(void)
     g_match_points_integrated = true;
     g_match_points_ms = 0U;
     g_lidar_decimator = 0U;
+    g_nav_start_ms = 0U;
+    g_last_lidar_ms = 0U;
+    reset_encoder_stall_monitor();
     g_origin_valid = false;
     g_origin_nav_x_m = 0.0f;
     g_origin_nav_y_m = 0.0f;
@@ -1345,12 +1457,19 @@ void AutoNav_Stop(void)
     publish_status("NAV:OFF", true);
 }
 
+void AutoNav_NotifyLidarActivity(void)
+{
+    g_last_lidar_ms = HAL_GetTick();
+}
+
 void AutoNav_ObserveLidar(float angle_deg, uint16_t distance_mm, uint8_t quality)
 {
     if (distance_mm == 0U || quality == 0U) return;
 
     float dist_m = (float)distance_mm * 0.001f;
     if (dist_m <= 0.0f || dist_m > SECTOR_RANGE_MAX_M) return;
+
+    g_last_lidar_ms = HAL_GetTick();
 
     float rel = norm180(angle_deg - AUTONAV_LIDAR_FORWARD_DEG);
     int sidx = sector_index_from_rel_deg(rel);
@@ -1420,6 +1539,8 @@ void AutoNav_Tick(void)
     }
 
     if (g_mode == AUTONAV_OFF) return;
+
+    if (check_runtime_faults()) return;
 
     AutoNavMetrics_t m;
     collect_metrics(&m);
