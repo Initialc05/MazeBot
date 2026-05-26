@@ -3,11 +3,13 @@
  * @brief Embedded automatic navigation: OGM + topology + planner + local policy.
  */
 #include "autonav.h"
+#include "FreeRTOS.h"
 #include "bt_cmd.h"
 #include "cmsis_os.h"
 #include "encoder.h"
 #include "im948.h"
 #include "robot_state.h"
+#include "task.h"
 #include "uart_device.h"
 
 #include <math.h>
@@ -16,7 +18,7 @@
 #include <string.h>
 
 #ifndef M_PI
-#define M_PI 3.14159265358979323846
+#define M_PI 3.14159265
 #endif
 
 /* Geometry tuned for the coursework 5x5 orthogonal maze demo. */
@@ -31,6 +33,16 @@
 #define AUTONAV_MATCH_ACCEPT_SCORE   55.0f
 #define AUTONAV_SETTLE_MS            300U
 #define AUTONAV_DECISION_PERIOD_MS   50U
+#define AUTONAV_DRY_TURN_MS          250U
+#define AUTONAV_DRY_MOVE_MS          450U
+#define AUTONAV_DRY_ADJUST_MS        250U
+#define AUTONAV_SCAN_MIN_POINTS      10U
+
+#if AUTONAV_COMMAND_OUTPUT
+#define AUTONAV_DRY_RUN              0
+#else
+#define AUTONAV_DRY_RUN              1
+#endif
 
 /* RPLIDAR mounting offset: 0 deg is treated as the robot forward direction. */
 #define AUTONAV_LIDAR_FORWARD_DEG    0.0f
@@ -89,6 +101,12 @@ typedef struct {
     uint8_t quality;
 } ScanPoint_t;
 
+typedef struct {
+    float distance_m;
+    uint16_t hits;
+    bool observed;
+} Clearance_t;
+
 static const int8_t dir_dx[DIR_COUNT] = { 1, 0, -1, 0 };
 static const int8_t dir_dy[DIR_COUNT] = { 0, 1, 0, -1 };
 static const float dir_yaw_deg[DIR_COUNT] = { 0.0f, 90.0f, 180.0f, -90.0f };
@@ -113,6 +131,11 @@ static uint8_t g_scan_head;
 static uint8_t g_scan_count;
 static uint8_t g_lidar_decimator;
 
+static ScanPoint_t g_match_points[SCAN_POINT_MAX];
+static uint8_t g_match_point_count;
+static bool g_match_points_integrated;
+static uint32_t g_match_points_ms;
+
 static Cell_t g_goal;
 static Cell_t g_next_cell;
 static Cell_t g_path[PATH_MAX_CELLS];
@@ -124,6 +147,15 @@ static uint32_t g_last_status_ms;
 static uint8_t g_stable_goal_count;
 static bool g_action_started;
 static uint8_t g_wall_adjust_phase;
+
+static float g_origin_x_m;
+static float g_origin_y_m;
+static float g_origin_yaw_deg;
+static float g_origin_nav_x_m;
+static float g_origin_nav_y_m;
+static bool g_origin_valid;
+static Cell_t g_dry_cell;
+static float g_dry_yaw_deg;
 
 static float g_matched_x_m;
 static float g_matched_y_m;
@@ -162,6 +194,16 @@ static float yaw_error_deg(float current, float target)
     return norm180(target - current);
 }
 
+static void autonav_lock(void)
+{
+    taskENTER_CRITICAL();
+}
+
+static void autonav_unlock(void)
+{
+    taskEXIT_CRITICAL();
+}
+
 static uint8_t opposite_dir(uint8_t dir)
 {
     return (uint8_t)((dir + 2U) & 3U);
@@ -188,6 +230,61 @@ static Cell_t current_cell_from_pose(float x_m, float y_m)
     c.x = (int8_t)clampi_local((int)lroundf(x_m / AUTONAV_CELL_SIZE_M), 0, AUTONAV_CELL_COUNT - 1);
     c.y = (int8_t)clampi_local((int)lroundf(y_m / AUTONAV_CELL_SIZE_M), 0, AUTONAV_CELL_COUNT - 1);
     return c;
+}
+
+static void capture_nav_origin_at(Cell_t cell, float nav_yaw_deg)
+{
+    g_origin_x_m = odom_x;
+    g_origin_y_m = odom_y;
+    g_origin_yaw_deg = norm180(AngleZ - nav_yaw_deg);
+    g_origin_nav_x_m = (float)cell.x * AUTONAV_CELL_SIZE_M;
+    g_origin_nav_y_m = (float)cell.y * AUTONAV_CELL_SIZE_M;
+    g_origin_valid = true;
+}
+
+static void capture_nav_origin(void)
+{
+    Cell_t start = { 0, 0 };
+    capture_nav_origin_at(start, 0.0f);
+}
+
+static void odom_to_nav_pose(float *x_m, float *y_m, float *yaw_deg)
+{
+    if (!g_origin_valid) {
+        capture_nav_origin();
+    }
+
+    float dx = odom_x - g_origin_x_m;
+    float dy = odom_y - g_origin_y_m;
+    float yaw0 = deg_to_rad(g_origin_yaw_deg);
+    float c = cosf(yaw0);
+    float s = sinf(yaw0);
+
+    *x_m = g_origin_nav_x_m + dx * c + dy * s;
+    *y_m = g_origin_nav_y_m - dx * s + dy * c;
+    *yaw_deg = norm180(AngleZ - g_origin_yaw_deg);
+}
+
+static void dry_pose(float *x_m, float *y_m, float *yaw_deg)
+{
+    *x_m = (float)g_dry_cell.x * AUTONAV_CELL_SIZE_M;
+    *y_m = (float)g_dry_cell.y * AUTONAV_CELL_SIZE_M;
+    *yaw_deg = g_dry_yaw_deg;
+}
+
+static float current_nav_yaw(void)
+{
+#if AUTONAV_DRY_RUN
+    return g_dry_yaw_deg;
+#else
+    float x;
+    float y;
+    float yaw;
+    odom_to_nav_pose(&x, &y, &yaw);
+    (void)x;
+    (void)y;
+    return yaw;
+#endif
 }
 
 static NavDir_t quantize_heading(float yaw_deg)
@@ -307,13 +404,16 @@ static int ogm_score_at(float x_m, float y_m)
     return 0;
 }
 
-static void update_ogm_ray(float angle_deg, float dist_m)
+static void update_ogm_body_point(float pose_x_m, float pose_y_m, float pose_yaw_deg,
+                                  float x_body_m, float y_body_m)
 {
-    float yaw = deg_to_rad(AngleZ + angle_deg - AUTONAV_LIDAR_FORWARD_DEG);
-    float sx = odom_x;
-    float sy = odom_y;
-    float hx = sx + dist_m * cosf(yaw);
-    float hy = sy + dist_m * sinf(yaw);
+    float yaw = deg_to_rad(pose_yaw_deg);
+    float c = cosf(yaw);
+    float s = sinf(yaw);
+    float sx = pose_x_m;
+    float sy = pose_y_m;
+    float hx = sx + x_body_m * c - y_body_m * s;
+    float hy = sy + x_body_m * s + y_body_m * c;
 
     int sxg, syg, hxg, hyg;
     if (!world_to_grid(sx, sy, &sxg, &syg)) return;
@@ -321,6 +421,15 @@ static void update_ogm_ray(float angle_deg, float dist_m)
 
     ogm_trace_free(sxg, syg, hxg, hyg);
     ogm_add(hxg, hyg, OGM_OCC_INC);
+}
+
+static void integrate_scan_points(const ScanPoint_t *points, uint8_t count,
+                                  float pose_x_m, float pose_y_m, float pose_yaw_deg)
+{
+    for (uint8_t i = 0; i < count; i++) {
+        update_ogm_body_point(pose_x_m, pose_y_m, pose_yaw_deg,
+                              points[i].x_body_m, points[i].y_body_m);
+    }
 }
 
 static void store_scan_point(float angle_deg, float dist_m, uint8_t quality)
@@ -333,7 +442,24 @@ static void store_scan_point(float angle_deg, float dist_m, uint8_t quality)
     if (g_scan_count < SCAN_POINT_MAX) g_scan_count++;
 }
 
-static float scan_match_candidate_score(float px, float py, float yaw_deg, uint8_t *used_out)
+static void freeze_match_points_locked(uint32_t now_ms)
+{
+    uint8_t count = g_scan_count;
+    if (count > SCAN_POINT_MAX) count = SCAN_POINT_MAX;
+
+    for (uint8_t i = 0; i < count; i++) {
+        uint8_t idx = (uint8_t)((g_scan_head + SCAN_POINT_MAX - count + i) % SCAN_POINT_MAX);
+        g_match_points[i] = g_scan_points[idx];
+    }
+
+    g_match_point_count = count;
+    g_match_points_integrated = false;
+    g_match_points_ms = now_ms;
+}
+
+static float scan_match_candidate_score(const ScanPoint_t *points, uint8_t count,
+                                        float px, float py, float yaw_deg,
+                                        uint8_t *used_out)
 {
     float yaw = deg_to_rad(yaw_deg);
     float cy = cosf(yaw);
@@ -341,10 +467,9 @@ static float scan_match_candidate_score(float px, float py, float yaw_deg, uint8
     int score = 0;
     uint8_t used = 0;
 
-    for (uint8_t i = 0; i < g_scan_count; i++) {
-        uint8_t idx = (uint8_t)((g_scan_head + SCAN_POINT_MAX - 1U - i) % SCAN_POINT_MAX);
-        float bx = g_scan_points[idx].x_body_m;
-        float by = g_scan_points[idx].y_body_m;
+    for (uint8_t i = 0; i < count; i++) {
+        float bx = points[i].x_body_m;
+        float by = points[i].y_body_m;
         float wx = px + bx * cy - by * sy;
         float wy = py + bx * sy + by * cy;
         score += ogm_score_at(wx, wy);
@@ -356,25 +481,49 @@ static float scan_match_candidate_score(float px, float py, float yaw_deg, uint8
     return (float)score / (float)used;
 }
 
-static void run_scan_match(void)
+static void run_scan_match(float odom_nav_x, float odom_nav_y, float odom_nav_yaw)
 {
     static const float pos_offsets[] = { -0.02f, 0.0f, 0.02f };
     static const float yaw_offsets[] = { -3.0f, 0.0f, 3.0f };
 
+    ScanPoint_t points[SCAN_POINT_MAX];
+    uint8_t point_count;
+    bool should_integrate = false;
+
+    autonav_lock();
+    point_count = g_match_point_count;
+    for (uint8_t i = 0; i < point_count; i++) {
+        points[i] = g_match_points[i];
+    }
+    if (point_count >= AUTONAV_SCAN_MIN_POINTS && !g_match_points_integrated) {
+        g_match_points_integrated = true;
+        should_integrate = true;
+    }
+    autonav_unlock();
+
     float best_raw = -999.0f;
-    float best_x = odom_x;
-    float best_y = odom_y;
-    float best_yaw = AngleZ;
+    float best_x = odom_nav_x;
+    float best_y = odom_nav_y;
+    float best_yaw = odom_nav_yaw;
     uint8_t best_used = 0;
+
+    if (point_count < AUTONAV_SCAN_MIN_POINTS) {
+        g_matched_x_m = odom_nav_x;
+        g_matched_y_m = odom_nav_y;
+        g_matched_yaw_deg = odom_nav_yaw;
+        g_match_score = 0.0f;
+        g_match_accepted = false;
+        return;
+    }
 
     for (uint8_t ix = 0; ix < 3U; ix++) {
         for (uint8_t iy = 0; iy < 3U; iy++) {
             for (uint8_t it = 0; it < 3U; it++) {
                 uint8_t used = 0;
-                float cx = odom_x + pos_offsets[ix];
-                float cy = odom_y + pos_offsets[iy];
-                float ct = AngleZ + yaw_offsets[it];
-                float raw = scan_match_candidate_score(cx, cy, ct, &used);
+                float cx = odom_nav_x + pos_offsets[ix];
+                float cy = odom_nav_y + pos_offsets[iy];
+                float ct = odom_nav_yaw + yaw_offsets[it];
+                float raw = scan_match_candidate_score(points, point_count, cx, cy, ct, &used);
                 if (used > 0U && raw > best_raw) {
                     best_raw = raw;
                     best_x = cx;
@@ -390,7 +539,7 @@ static void run_scan_match(void)
     g_matched_y_m = best_y;
     g_matched_yaw_deg = best_yaw;
 
-    if (best_used < 10U) {
+    if (best_used < AUTONAV_SCAN_MIN_POINTS) {
         g_match_score = 0.0f;
         g_match_accepted = false;
         return;
@@ -398,42 +547,57 @@ static void run_scan_match(void)
 
     g_match_score = clampf_local(50.0f + best_raw * 25.0f, 0.0f, 100.0f);
     g_match_accepted = (g_match_score >= AUTONAV_MATCH_ACCEPT_SCORE);
+
+    if (should_integrate) {
+        integrate_scan_points(points, point_count, best_x, best_y, best_yaw);
+    }
 }
 
-static float sector_clearance(float rel_center_deg, float half_width_deg)
+static Clearance_t sector_clearance_ex(float rel_center_deg, float half_width_deg)
 {
-    float best = SECTOR_RANGE_MAX_M;
+    Clearance_t result;
+    result.distance_m = SECTOR_RANGE_MAX_M;
+    result.hits = 0U;
+    result.observed = false;
+
+    autonav_lock();
     for (uint8_t i = 0; i < SECTOR_COUNT; i++) {
         float sector_center = -180.0f + ((float)i + 0.5f) * SECTOR_WIDTH_DEG;
         float err = fabsf(norm180(sector_center - rel_center_deg));
         if (err <= half_width_deg && g_stable_sector_count[i] > 0U) {
-            if (g_stable_sector_min[i] < best) best = g_stable_sector_min[i];
+            result.observed = true;
+            result.hits = (uint16_t)(result.hits + g_stable_sector_count[i]);
+            if (g_stable_sector_min[i] < result.distance_m) {
+                result.distance_m = g_stable_sector_min[i];
+            }
         }
     }
-    return best;
+    autonav_unlock();
+
+    return result;
 }
 
-static float dir_clearance(NavDir_t dir, float yaw_deg)
+static Clearance_t dir_clearance_ex(NavDir_t dir, float yaw_deg)
 {
     float rel = norm180(dir_yaw_deg[dir] - yaw_deg);
-    return sector_clearance(rel, 22.0f);
+    return sector_clearance_ex(rel, 22.0f);
 }
 
 static float estimate_wall_angle_error(void)
 {
-    float lf = sector_clearance(55.0f, 12.0f);
-    float lb = sector_clearance(125.0f, 12.0f);
-    float rf = sector_clearance(-55.0f, 12.0f);
-    float rb = sector_clearance(-125.0f, 12.0f);
+    Clearance_t lf = sector_clearance_ex(55.0f, 12.0f);
+    Clearance_t lb = sector_clearance_ex(125.0f, 12.0f);
+    Clearance_t rf = sector_clearance_ex(-55.0f, 12.0f);
+    Clearance_t rb = sector_clearance_ex(-125.0f, 12.0f);
     float accum = 0.0f;
     uint8_t n = 0;
 
-    if (lf < SECTOR_RANGE_MAX_M && lb < SECTOR_RANGE_MAX_M) {
-        accum += atan2f(lf - lb, 0.22f) * (float)(180.0 / M_PI);
+    if (lf.observed && lb.observed) {
+        accum += atan2f(lf.distance_m - lb.distance_m, 0.22f) * (float)(180.0 / M_PI);
         n++;
     }
-    if (rf < SECTOR_RANGE_MAX_M && rb < SECTOR_RANGE_MAX_M) {
-        accum += atan2f(rb - rf, 0.22f) * (float)(180.0 / M_PI);
+    if (rf.observed && rb.observed) {
+        accum += atan2f(rb.distance_m - rf.distance_m, 0.22f) * (float)(180.0 / M_PI);
         n++;
     }
 
@@ -463,20 +627,48 @@ static void collect_metrics(AutoNavMetrics_t *m)
 {
     memset(m, 0, sizeof(*m));
 
-    run_scan_match();
+    float odom_nav_x;
+    float odom_nav_y;
+    float odom_nav_yaw;
+    odom_to_nav_pose(&odom_nav_x, &odom_nav_y, &odom_nav_yaw);
 
-    float pose_x = g_match_accepted ? g_matched_x_m : odom_x;
-    float pose_y = g_match_accepted ? g_matched_y_m : odom_y;
-    float pose_yaw = g_match_accepted ? g_matched_yaw_deg : AngleZ;
+    run_scan_match(odom_nav_x, odom_nav_y, odom_nav_yaw);
+
+    float pose_x = g_match_accepted ? g_matched_x_m : odom_nav_x;
+    float pose_y = g_match_accepted ? g_matched_y_m : odom_nav_y;
+    float pose_yaw = g_match_accepted ? g_matched_yaw_deg : odom_nav_yaw;
+
+#if AUTONAV_DRY_RUN
+    dry_pose(&pose_x, &pose_y, &pose_yaw);
+    m->virtual_pose = true;
+#endif
+
     Cell_t c = current_cell_from_pose(pose_x, pose_y);
     NavDir_t heading = quantize_heading(pose_yaw);
 
     m->cell_x = c.x;
     m->cell_y = c.y;
-    m->forward_clearance_m = sector_clearance(0.0f, 20.0f);
-    m->left_wall_dist_m = sector_clearance(90.0f, 18.0f);
-    m->right_wall_dist_m = sector_clearance(-90.0f, 18.0f);
-    m->nearest_wall_dist_m = fminf(m->left_wall_dist_m, m->right_wall_dist_m);
+
+    Clearance_t forward = sector_clearance_ex(0.0f, 20.0f);
+    Clearance_t left = sector_clearance_ex(90.0f, 18.0f);
+    Clearance_t right = sector_clearance_ex(-90.0f, 18.0f);
+
+    m->forward_observed = forward.observed;
+    m->left_wall_observed = left.observed;
+    m->right_wall_observed = right.observed;
+    m->forward_clearance_m = forward.observed ? forward.distance_m : 0.0f;
+    m->left_wall_dist_m = left.observed ? left.distance_m : SECTOR_RANGE_MAX_M;
+    m->right_wall_dist_m = right.observed ? right.distance_m : SECTOR_RANGE_MAX_M;
+    if (left.observed && right.observed) {
+        m->nearest_wall_dist_m = fminf(m->left_wall_dist_m, m->right_wall_dist_m);
+    } else if (left.observed) {
+        m->nearest_wall_dist_m = m->left_wall_dist_m;
+    } else if (right.observed) {
+        m->nearest_wall_dist_m = m->right_wall_dist_m;
+    } else {
+        m->nearest_wall_dist_m = SECTOR_RANGE_MAX_M;
+    }
+
     m->wall_angle_error_deg = estimate_wall_angle_error();
     m->heading_error_deg = yaw_error_deg(pose_yaw, dir_yaw_deg[g_target_dir]);
 
@@ -491,8 +683,8 @@ static void collect_metrics(AutoNavMetrics_t *m)
     uint8_t open_mask = 0;
     uint8_t open_count = 0;
     for (uint8_t d = 0; d < DIR_COUNT; d++) {
-        float clear = dir_clearance((NavDir_t)d, pose_yaw);
-        if (clear > 0.34f) {
+        Clearance_t clear = dir_clearance_ex((NavDir_t)d, pose_yaw);
+        if (clear.observed && clear.distance_m > 0.34f) {
             open_mask |= (uint8_t)(1U << d);
             open_count++;
         }
@@ -510,12 +702,15 @@ static void update_topology_from_metrics(const AutoNavMetrics_t *m)
 
     g_topo[c.y][c.x].visited = 1U;
 
-    float yaw = g_match_accepted ? g_matched_yaw_deg : AngleZ;
+    float yaw = g_match_accepted ? g_matched_yaw_deg : current_nav_yaw();
     for (uint8_t d = 0; d < DIR_COUNT; d++) {
-        float clear = dir_clearance((NavDir_t)d, yaw);
-        if (clear < 0.26f) {
+        Clearance_t clear = dir_clearance_ex((NavDir_t)d, yaw);
+        if (!clear.observed) {
+            continue;
+        }
+        if (clear.distance_m < 0.26f) {
             update_edge(c, (NavDir_t)d, EDGE_WALL);
-        } else if (clear > 0.38f) {
+        } else if (clear.distance_m > 0.38f) {
             update_edge(c, (NavDir_t)d, EDGE_OPEN);
         }
     }
@@ -626,7 +821,7 @@ static bool astar_plan(Cell_t start, Cell_t goal, Cell_t *path, uint8_t *path_le
 static bool choose_goal_directed_step(const AutoNavMetrics_t *m, Cell_t *next, NavDir_t *dir)
 {
     Cell_t cur = { m->cell_x, m->cell_y };
-    NavDir_t heading = quantize_heading(g_match_accepted ? g_matched_yaw_deg : AngleZ);
+    NavDir_t heading = quantize_heading(current_nav_yaw());
     int best_score = 32000;
     bool found = false;
 
@@ -655,7 +850,7 @@ static bool choose_goal_directed_step(const AutoNavMetrics_t *m, Cell_t *next, N
 
 static bool choose_frontier_step(Cell_t cur, Cell_t *next, NavDir_t *dir)
 {
-    NavDir_t heading = quantize_heading(g_match_accepted ? g_matched_yaw_deg : AngleZ);
+    NavDir_t heading = quantize_heading(current_nav_yaw());
     int best_score = 32000;
     bool found = false;
 
@@ -696,47 +891,57 @@ static bool is_goal_reached(const AutoNavMetrics_t *m)
 
 static bool needs_wall_adjust(const AutoNavMetrics_t *m)
 {
-    return (m->nearest_wall_dist_m < AUTONAV_SIDE_ADJUST_M) ||
+    bool near_left = m->left_wall_observed && (m->left_wall_dist_m < AUTONAV_SIDE_ADJUST_M);
+    bool near_right = m->right_wall_observed && (m->right_wall_dist_m < AUTONAV_SIDE_ADJUST_M);
+
+    return near_left || near_right ||
            (fabsf(m->wall_angle_error_deg) > AUTONAV_WALL_ALIGN_TOL_DEG) ||
            (m->center_error_m > 0.12f);
 }
 
 static bool is_straight_safe(const AutoNavMetrics_t *m)
 {
-    return (m->forward_clearance_m > AUTONAV_FRONT_CLEAR_M) &&
+    return m->forward_observed &&
+           (m->forward_clearance_m > AUTONAV_FRONT_CLEAR_M) &&
            (m->nearest_wall_dist_m > AUTONAV_SIDE_SAFE_M) &&
            (fabsf(m->wall_angle_error_deg) < 10.0f) &&
            (fabsf(m->heading_error_deg) < AUTONAV_HEADING_TOL_DEG) &&
-           (m->match_accepted || m->match_score > 45.0f || g_scan_count > 20U);
+           (m->virtual_pose || m->match_accepted || m->match_score > 45.0f ||
+            g_match_point_count > 20U);
 }
 
 static LocalAction_t evaluate_local_window(const AutoNavMetrics_t *m)
 {
-    if (m->forward_clearance_m < AUTONAV_FRONT_DANGER_M) {
+    if (!m->forward_observed || m->forward_clearance_m < AUTONAV_FRONT_DANGER_M) {
         return LOCAL_STOP;
     }
 
     float straight_score = m->forward_clearance_m * 10.0f
                          - fabsf(m->heading_error_deg) * 0.20f
                          - fabsf(m->wall_angle_error_deg) * 0.12f;
-    float left_score = m->left_wall_dist_m * 8.0f + yaw_error_deg(AngleZ, dir_yaw_deg[g_target_dir]) * 0.02f;
-    float right_score = m->right_wall_dist_m * 8.0f - yaw_error_deg(AngleZ, dir_yaw_deg[g_target_dir]) * 0.02f;
+    float heading_err = yaw_error_deg(current_nav_yaw(), dir_yaw_deg[g_target_dir]);
+    float left_dist = m->left_wall_observed ? m->left_wall_dist_m : 0.0f;
+    float right_dist = m->right_wall_observed ? m->right_wall_dist_m : 0.0f;
+    float left_score = left_dist * 8.0f + heading_err * 0.02f;
+    float right_score = right_dist * 8.0f - heading_err * 0.02f;
 
     if (is_straight_safe(m) && straight_score >= left_score && straight_score >= right_score) {
         return LOCAL_STRAIGHT;
     }
-    if (m->left_wall_dist_m < m->right_wall_dist_m) return LOCAL_ADJUST_RIGHT;
+    if (m->left_wall_observed && (!m->right_wall_observed || m->left_wall_dist_m < m->right_wall_dist_m)) {
+        return LOCAL_ADJUST_RIGHT;
+    }
     return LOCAL_ADJUST_LEFT;
 }
 
 static float compute_micro_adjust_deg(const AutoNavMetrics_t *m)
 {
     float lateral_error = 0.0f;
-    if (m->left_wall_dist_m < SECTOR_RANGE_MAX_M && m->right_wall_dist_m < SECTOR_RANGE_MAX_M) {
+    if (m->left_wall_observed && m->right_wall_observed) {
         lateral_error = (m->right_wall_dist_m - m->left_wall_dist_m) * 0.5f;
-    } else if (m->left_wall_dist_m < AUTONAV_SIDE_ADJUST_M) {
+    } else if (m->left_wall_observed && m->left_wall_dist_m < AUTONAV_SIDE_ADJUST_M) {
         lateral_error = AUTONAV_SIDE_ADJUST_M - m->left_wall_dist_m;
-    } else if (m->right_wall_dist_m < AUTONAV_SIDE_ADJUST_M) {
+    } else if (m->right_wall_observed && m->right_wall_dist_m < AUTONAV_SIDE_ADJUST_M) {
         lateral_error = m->right_wall_dist_m - AUTONAV_SIDE_ADJUST_M;
     }
 
@@ -782,7 +987,7 @@ static void enter_state(AutoNavState_t state)
 
 static void issue_turn_to_dir(NavDir_t dir)
 {
-    float delta = yaw_error_deg(AngleZ, dir_yaw_deg[dir]);
+    float delta = yaw_error_deg(current_nav_yaw(), dir_yaw_deg[dir]);
 #if AUTONAV_COMMAND_OUTPUT
     BtCmd_ExecutePreciseTurn(delta);
 #else
@@ -824,13 +1029,36 @@ static void select_goal_for_mode(AutoNavMode_t mode)
     }
 }
 
+static Cell_t start_cell_for_mode(AutoNavMode_t mode)
+{
+    Cell_t c;
+    if (mode == AUTONAV_EXIT_TO_START) {
+        c.x = AUTONAV_CELL_COUNT - 1;
+        c.y = AUTONAV_CELL_COUNT - 1;
+    } else {
+        c.x = 0;
+        c.y = 0;
+    }
+    return c;
+}
+
+static float start_yaw_for_mode(AutoNavMode_t mode)
+{
+    return (mode == AUTONAV_EXIT_TO_START) ? 180.0f : 0.0f;
+}
+
 static void start_mode(AutoNavMode_t mode)
 {
     g_mode = mode;
     select_goal_for_mode(mode);
+    Cell_t start = start_cell_for_mode(mode);
+    float start_yaw = start_yaw_for_mode(mode);
+    capture_nav_origin_at(start, start_yaw);
+    g_dry_cell = start;
+    g_dry_yaw_deg = start_yaw;
     g_stable_goal_count = 0U;
     g_path_len = 0U;
-    g_target_dir = quantize_heading(AngleZ);
+    g_target_dir = quantize_heading(start_yaw);
     enter_state(AUTONAV_LOCALIZE_START);
 
     if (mode == AUTONAV_START_TO_EXIT) {
@@ -840,6 +1068,18 @@ static void start_mode(AutoNavMode_t mode)
         RobotState_Set(ROBOT_RETURNING);
         publish_status("NAV:EXIT_TO_START", true);
     }
+}
+
+static void switch_to_return_mode(void)
+{
+    g_mode = AUTONAV_EXIT_TO_START;
+    select_goal_for_mode(g_mode);
+    g_stable_goal_count = 0U;
+    g_path_len = 0U;
+    g_target_dir = quantize_heading(current_nav_yaw());
+    RobotState_Set(ROBOT_RETURNING);
+    publish_status("NAV:EXIT_REACHED return_mode", true);
+    enter_state(AUTONAV_UPDATE_TOPOLOGY);
 }
 
 static void handle_plan(const AutoNavMetrics_t *m)
@@ -939,7 +1179,12 @@ static void step_state_machine(const AutoNavMetrics_t *m)
             issue_turn_to_dir(g_target_dir);
             g_action_started = true;
         }
-#if AUTONAV_COMMAND_OUTPUT
+#if AUTONAV_DRY_RUN
+        if (HAL_GetTick() - g_state_enter_ms > AUTONAV_DRY_TURN_MS) {
+            g_dry_yaw_deg = dir_yaw_deg[g_target_dir];
+            enter_state(AUTONAV_SETTLE_AND_MATCH);
+        }
+#elif AUTONAV_COMMAND_OUTPUT
         if (turnState == TURN_REACHED || HAL_GetTick() - g_state_enter_ms > 5500U) {
             enter_state(AUTONAV_SETTLE_AND_MATCH);
         }
@@ -964,7 +1209,12 @@ static void step_state_machine(const AutoNavMetrics_t *m)
                 issue_move_cell();
                 g_action_started = true;
             }
-#if AUTONAV_COMMAND_OUTPUT
+#if AUTONAV_DRY_RUN
+            if (HAL_GetTick() - g_state_enter_ms > AUTONAV_DRY_MOVE_MS) {
+                g_dry_cell = g_next_cell;
+                enter_state(AUTONAV_SETTLE_AND_MATCH);
+            }
+#elif AUTONAV_COMMAND_OUTPUT
             if (moveState == MOVE_REACHED || HAL_GetTick() - g_state_enter_ms > 11000U) {
                 enter_state(AUTONAV_SETTLE_AND_MATCH);
             }
@@ -989,7 +1239,12 @@ static void step_state_machine(const AutoNavMetrics_t *m)
             g_wall_adjust_phase = 0U;
         }
 
-#if AUTONAV_COMMAND_OUTPUT
+#if AUTONAV_DRY_RUN
+        if (HAL_GetTick() - g_state_enter_ms > AUTONAV_DRY_ADJUST_MS) {
+            g_dry_yaw_deg = norm180(g_dry_yaw_deg + corr);
+            enter_state(AUTONAV_SETTLE_AND_MATCH);
+        }
+#elif AUTONAV_COMMAND_OUTPUT
         if (g_wall_adjust_phase == 0U &&
             (turnState == TURN_REACHED || HAL_GetTick() - g_state_enter_ms > 3000U)) {
             issue_micro_forward();
@@ -1027,11 +1282,19 @@ static void step_state_machine(const AutoNavMetrics_t *m)
 
     case AUTONAV_GOAL_REACHED:
 #if AUTONAV_COMMAND_OUTPUT
-        BtCmd_ProcessByte('x');
+        if (!g_action_started) {
+            BtCmd_ProcessByte('x');
+            g_action_started = true;
+        }
 #endif
-        RobotState_Set(ROBOT_IDLE);
-        g_mode = AUTONAV_OFF;
-        publish_status("NAV:DONE", false);
+        if (g_mode == AUTONAV_START_TO_EXIT) {
+            switch_to_return_mode();
+        } else {
+            RobotState_Set(ROBOT_IDLE);
+            g_mode = AUTONAV_OFF;
+            enter_state(AUTONAV_STATE_OFF);
+            publish_status("NAV:DONE", true);
+        }
         break;
 
     case AUTONAV_STATE_OFF:
@@ -1051,7 +1314,16 @@ void AutoNav_Init(void)
     g_state = AUTONAV_STATE_OFF;
     g_scan_head = 0U;
     g_scan_count = 0U;
+    g_match_point_count = 0U;
+    g_match_points_integrated = true;
+    g_match_points_ms = 0U;
     g_lidar_decimator = 0U;
+    g_origin_valid = false;
+    g_origin_nav_x_m = 0.0f;
+    g_origin_nav_y_m = 0.0f;
+    g_dry_cell.x = 0;
+    g_dry_cell.y = 0;
+    g_dry_yaw_deg = 0.0f;
     g_matched_x_m = 0.0f;
     g_matched_y_m = 0.0f;
     g_matched_yaw_deg = 0.0f;
@@ -1087,6 +1359,8 @@ void AutoNav_ObserveLidar(float angle_deg, uint16_t distance_mm, uint8_t quality
 
     float rel = norm180(angle_deg - AUTONAV_LIDAR_FORWARD_DEG);
     int sidx = sector_index_from_rel_deg(rel);
+
+    autonav_lock();
     if (dist_m < g_sector_min[sidx]) {
         g_sector_min[sidx] = dist_m;
     }
@@ -1094,25 +1368,35 @@ void AutoNav_ObserveLidar(float angle_deg, uint16_t distance_mm, uint8_t quality
     g_scan_points_in_rev++;
 
     g_lidar_decimator++;
-    if ((g_lidar_decimator % 3U) != 0U) {
-        return;
+    if ((g_lidar_decimator % 3U) == 0U) {
+        store_scan_point(angle_deg, dist_m, quality);
     }
-
-    store_scan_point(angle_deg, dist_m, quality);
-    update_ogm_ray(angle_deg, dist_m);
+    autonav_unlock();
 }
 
 void AutoNav_NotifyScanStart(void)
 {
+    uint32_t now = HAL_GetTick();
+
+    autonav_lock();
     if (g_scan_points_in_rev >= 8U) {
         for (uint8_t i = 0; i < SECTOR_COUNT; i++) {
             g_stable_sector_min[i] = g_sector_min[i];
             g_stable_sector_count[i] = g_sector_count[i];
-            g_sector_min[i] = SECTOR_RANGE_MAX_M;
-            g_sector_count[i] = 0U;
         }
     }
+
+    for (uint8_t i = 0; i < SECTOR_COUNT; i++) {
+        g_sector_min[i] = SECTOR_RANGE_MAX_M;
+        g_sector_count[i] = 0U;
+    }
+
+    if (g_scan_count >= AUTONAV_SCAN_MIN_POINTS) {
+        freeze_match_points_locked(now);
+    }
+
     g_scan_points_in_rev = 0U;
+    autonav_unlock();
 }
 
 void AutoNav_Tick(void)

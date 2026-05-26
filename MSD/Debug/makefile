@@ -51,7 +51,7 @@ MAP_FILES += \
 MSD.map \
 
 SIZE_OUTPUT += \
-MSD.size.stdout \
+default.size.stdout \
 
 OBJDUMP_LIST += \
 MSD.list \
@@ -69,7 +69,7 @@ MSD.elf MSD.map: $(OBJS) $(USER_OBJS) D:\QMUL\ Modules\Y3_S2\Microprocessor\ Sys
 	@echo 'Finished building target: $@'
 	@echo ' '
 
-MSD.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	arm-none-eabi-size  $(EXECUTABLES)
 	@echo 'Finished building: $@'
 	@echo ' '
@@ -81,7 +81,7 @@ MSD.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 
 # Other Targets
 clean:
-	-$(RM) MSD.elf MSD.list MSD.map MSD.size.stdout
+	-$(RM) MSD.elf MSD.list MSD.map default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)

@@ -50,6 +50,10 @@ typedef struct {
     float center_error_m;
     float match_score;
     bool  match_accepted;
+    bool  forward_observed;
+    bool  left_wall_observed;
+    bool  right_wall_observed;
+    bool  virtual_pose;
     uint8_t junction_score;
     uint8_t open_dirs_mask;
     int8_t cell_x;
