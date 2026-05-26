@@ -1,3 +1,6 @@
+# Document
+Documents/
+
 # Build output
 MSD/Debug/**/*.o
 MSD/Debug/**/*.d
