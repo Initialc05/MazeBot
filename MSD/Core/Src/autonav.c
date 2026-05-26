@@ -38,12 +38,6 @@
 #define AUTONAV_DRY_ADJUST_MS        250U
 #define AUTONAV_SCAN_MIN_POINTS      10U
 
-#if AUTONAV_COMMAND_OUTPUT
-#define AUTONAV_DRY_RUN              0
-#else
-#define AUTONAV_DRY_RUN              1
-#endif
-
 /* RPLIDAR mounting offset: 0 deg is treated as the robot forward direction. */
 #define AUTONAV_LIDAR_FORWARD_DEG    0.0f
 
@@ -265,12 +259,14 @@ static void odom_to_nav_pose(float *x_m, float *y_m, float *yaw_deg)
     *yaw_deg = norm180(AngleZ - g_origin_yaw_deg);
 }
 
+#if AUTONAV_DRY_RUN
 static void dry_pose(float *x_m, float *y_m, float *yaw_deg)
 {
     *x_m = (float)g_dry_cell.x * AUTONAV_CELL_SIZE_M;
     *y_m = (float)g_dry_cell.y * AUTONAV_CELL_SIZE_M;
     *yaw_deg = g_dry_yaw_deg;
 }
+#endif
 
 static float current_nav_yaw(void)
 {
@@ -432,11 +428,10 @@ static void integrate_scan_points(const ScanPoint_t *points, uint8_t count,
     }
 }
 
-static void store_scan_point(float angle_deg, float dist_m, uint8_t quality)
+static void store_scan_point_body(float x_body_m, float y_body_m, uint8_t quality)
 {
-    float rel = deg_to_rad(angle_deg - AUTONAV_LIDAR_FORWARD_DEG);
-    g_scan_points[g_scan_head].x_body_m = dist_m * cosf(rel);
-    g_scan_points[g_scan_head].y_body_m = dist_m * sinf(rel);
+    g_scan_points[g_scan_head].x_body_m = x_body_m;
+    g_scan_points[g_scan_head].y_body_m = y_body_m;
     g_scan_points[g_scan_head].quality = quality;
     g_scan_head = (uint8_t)((g_scan_head + 1U) % SCAN_POINT_MAX);
     if (g_scan_count < SCAN_POINT_MAX) g_scan_count++;
@@ -1359,6 +1354,9 @@ void AutoNav_ObserveLidar(float angle_deg, uint16_t distance_mm, uint8_t quality
 
     float rel = norm180(angle_deg - AUTONAV_LIDAR_FORWARD_DEG);
     int sidx = sector_index_from_rel_deg(rel);
+    float rel_rad = deg_to_rad(rel);
+    float x_body_m = dist_m * cosf(rel_rad);
+    float y_body_m = dist_m * sinf(rel_rad);
 
     autonav_lock();
     if (dist_m < g_sector_min[sidx]) {
@@ -1369,7 +1367,7 @@ void AutoNav_ObserveLidar(float angle_deg, uint16_t distance_mm, uint8_t quality
 
     g_lidar_decimator++;
     if ((g_lidar_decimator % 3U) == 0U) {
-        store_scan_point(angle_deg, dist_m, quality);
+        store_scan_point_body(x_body_m, y_body_m, quality);
     }
     autonav_unlock();
 }

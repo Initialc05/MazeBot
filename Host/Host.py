@@ -42,13 +42,6 @@ from PIL import Image
 import threading
 import queue
 
-try:
-    from autonav_runtime import AutoNavRuntime
-    AUTONAV_RUNTIME_IMPORT_ERROR = None
-except Exception as exc:
-    AutoNavRuntime = None
-    AUTONAV_RUNTIME_IMPORT_ERROR = exc
-
 # ==================== 配置参数 ====================
 # 调试模式选择
 USE_BLUETOOTH_MODE = True  # True: 蓝牙模式, False: USB串口调试模式
@@ -62,11 +55,6 @@ else:
     BAUD_RATE = 115200     # USB串口波特率
 
 PACKET_SIZE = 14  # 数据包大小（雷达+Odom）
-
-# 自动导航运行时：默认挂载真实 A*/拓扑代码，命令输出由开关控制
-AUTO_NAV_RUNTIME = True
-AUTO_NAV_GOAL = (4, 4)
-AUTO_NAV_COMMAND_OUTPUT = False
 
 # 地图参数
 MAP_SIZE = 500  # 栅格地图大小 (500x500)
@@ -945,21 +933,6 @@ class LidarVisualizer:
         
         # 🚀 扫描缓冲区（用于位姿插值校正）
         self.scan_buffer = ScanBuffer()
-
-        # Auto navigation runtime: real planner objects, command output is switch-controlled.
-        self.autonav_runtime = None
-        if AUTO_NAV_RUNTIME:
-            if AutoNavRuntime is None:
-                print(f"⚠️  AutoNav runtime unavailable: {AUTONAV_RUNTIME_IMPORT_ERROR}")
-            else:
-                self.autonav_runtime = AutoNavRuntime(
-                    MAP_SIZE,
-                    MAP_RESOLUTION,
-                    AUTO_NAV_GOAL,
-                    send_command=lambda command: self.serial.ser.write(command.encode()),
-                    command_output_enabled=AUTO_NAV_COMMAND_OUTPUT,
-                )
-                print(f"✅ AutoNav runtime mounted: {self.autonav_runtime.short_status()}")
         
         # 🚀 共享Odom数据（线程安全，零延迟更新）
         self.shared_odom = SharedOdomData() if USE_SEPARATE_ODOM_THREAD else None
@@ -1558,19 +1531,6 @@ class LidarVisualizer:
         else:
             points_info = f"{total_points}"
 
-        autonav_status = ""
-        if self.autonav_runtime is not None:
-            recent_scan_points = []
-            common_len = min(len(self.lidar_data.angles), len(self.lidar_data.distances), len(self.lidar_data.qualities))
-            if common_len > 0:
-                start = max(0, common_len - 240)
-                step = max(1, (common_len - start) // 120)
-                recent_scan_points = [
-                    (self.lidar_data.angles[i], self.lidar_data.distances[i], self.lidar_data.qualities[i])
-                    for i in range(start, common_len, step)
-                ]
-            autonav_status = self.autonav_runtime.tick(current_odom, self.lidar_data.grid_map, recent_scan_points)
-        
         if current_odom:
             # 🔄 统一坐标系：将IMU坐标转换为显示坐标系（与地图一致）
             # IMU坐标系 → 显示坐标系：x_display = -y_imu, y_display = x_imu
@@ -1600,9 +1560,6 @@ class LidarVisualizer:
             status = (f"Scans: {self.lidar_data.scan_count} | Points: {points_info}{time_info} | "
                      f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Rot:{rotation_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
 
-        if autonav_status:
-            status += f" | {autonav_status}"
-        
         self.status_text.set_text(status)
         
         return self.scatter, self.map_img, self.trajectory_line, self.robot_direction_line, self.robot_center, self.status_text

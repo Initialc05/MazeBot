@@ -14,7 +14,11 @@
 #include <stdint.h>
 
 #ifndef AUTONAV_COMMAND_OUTPUT
-#define AUTONAV_COMMAND_OUTPUT 0
+#define AUTONAV_COMMAND_OUTPUT 1
+#endif
+
+#ifndef AUTONAV_DRY_RUN
+#define AUTONAV_DRY_RUN 0
 #endif
 
 #define AUTONAV_CELL_COUNT      5

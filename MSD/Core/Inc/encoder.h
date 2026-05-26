@@ -27,6 +27,8 @@ extern volatile int32_t encoder_left_ticks;   /* 累计tick (有符号,可溢出
 extern volatile int32_t encoder_right_ticks;
 extern volatile int32_t encoder_left_delta;   /* 上次采样间隔的增量 */
 extern volatile int32_t encoder_right_delta;
+extern volatile int32_t encoder_left_odom_pending;   /* 尚未积分进odom的tick */
+extern volatile int32_t encoder_right_odom_pending;
 
 /* 里程计 */
 extern float odom_x;      /* 位移X (米) */
@@ -51,7 +53,7 @@ float Encoder_GetLeftSpeed(float dt_s);
 float Encoder_GetRightSpeed(float dt_s);
 
 /**
- * @brief 更新里程计 (使用IMU航向角)
+ * @brief 消费Encoder_Update()累积的pending tick并更新里程计
  * @param heading_rad 当前航向角(弧度), 来自IMU
  */
 void Encoder_UpdateOdometry(float heading_rad);

@@ -117,13 +117,13 @@ The firmware is divided into modules:
 - `robot_state.c`: global robot state and latched E-stop state.
 - `ui_task.c`: OLED status display and potentiometer monitoring.
 
-LiDAR points with low quality, distance below 0.20 m or distance above 1.50 m are rejected. Each valid point is also passed into `AutoNav_ObserveLidar()` on the STM32, where scan sectors, recent scan points and occupancy-grid rays are updated. The same point is packed with odometry and yaw into a binary packet with header `0xAA55` and XOR checksum for optional Host visualisation.
+LiDAR points with low quality, distance below 0.20 m or distance above 1.50 m are rejected. Each valid point is also passed into `AutoNav_ObserveLidar()` on the STM32, where scan-sector minima and recent scan-point buffers are updated. At each scan boundary, `AutoNav_NotifyScanStart()` freezes a scan snapshot; AutoNav first scores this snapshot against the existing OGM for pose correction, then integrates the accepted snapshot into the occupancy grid. The same filtered point is packed with odometry and yaw into a binary packet with header `0xAA55` and XOR checksum for optional Host visualisation.
 
-The encoder design uses hardware timer encoder mode rather than GPIO interrupts, reducing CPU load and missed-pulse risk. The left encoder uses TIM3 and the right encoder uses TIM1; counter deltas are sampled every 5 ms in the motor control task.
+The encoder design uses hardware timer encoder mode rather than GPIO interrupts, reducing CPU load and missed-pulse risk. The left encoder uses TIM3 and the right encoder uses TIM1; counter deltas are sampled every 5 ms in the motor control task. These deltas are accumulated in pending odometry counters and consumed exactly once when a fresh IMU heading update arrives, preventing repeated use or loss of encoder deltas when the encoder and IMU tasks run at different rates.
 
 ### 3.3 Embedded AutoNav Design
 
-The automatic navigation system is implemented in `MSD/Core/Src/autonav.c`. It is designed as a lightweight embedded demo rather than a desktop SLAM system. Each LiDAR measurement is processed on the STM32: the firmware updates angular clearance sectors, stores recent scan points, performs Bresenham-style ray updates into a compact occupancy grid, and keeps the latest scan-match score for pose confidence.
+The automatic navigation system is implemented in `MSD/Core/Src/autonav.c`. It is designed as a lightweight embedded demo rather than a desktop SLAM system. LiDAR measurements are processed on the STM32: the firmware updates angular clearance sectors, freezes recent scan snapshots at rotation boundaries, performs lightweight scan matching against the previously integrated OGM, then applies Bresenham-style ray updates into a compact occupancy grid. This avoids using the same raw scan both to create and to immediately validate its own map evidence.
 
 For maze navigation, the STM32 maintains a discrete 5 x 5 topology:
 
@@ -185,7 +185,7 @@ This structure was chosen because the benchmark maze is grid-based. The cell-lev
 
 ### 3.4 Motion Control Design
 
-The STM32 motion controller supports continuous commands (`W`, `S`, `A`, `D`, `x`) and precise commands (`F`, `B`, `L`, `R` followed by a value). Embedded AutoNav uses the same precise movement and turn state machine when command output is enabled, so navigation and manual calibration share the same closed-loop motor controller.
+The STM32 motion controller supports continuous commands (`W`, `S`, `A`, `D`, `x`) and precise commands (`F`, `B`, `L`, `R` followed by a value). Embedded AutoNav uses the same precise movement and turn state machine by default, so navigation and manual calibration share the same closed-loop motor controller.
 
 The motor control uses three PID loops:
 
@@ -215,7 +215,7 @@ Additional safety behaviours include:
 - Motion timeout for rotation and forward movement.
 - Safe stop command `x`, Bluetooth AutoNav stop command `N`, and latched E-stop protection.
 
-During early demonstration, `AUTONAV_COMMAND_OUTPUT` is set to `0`. In this mode the STM32 still runs the complete Sense-Think-Act decision pipeline and outputs `NAV:...` status logs, but it does not drive the motors automatically. This makes the strategy layer safe to demonstrate before enabling physical autonomous motion. Setting `AUTONAV_COMMAND_OUTPUT` to `1` connects the same decisions to the existing precise movement and PID control functions.
+For the assessed firmware build, `AUTONAV_COMMAND_OUTPUT` is enabled by default, so AutoNav decisions are connected to the precise turn/move functions and the PID motor-control path. A separate explicit compile-time `AUTONAV_DRY_RUN` option exists only for bench logging without motor motion; it is not the default runtime configuration.
 
 ## 4. Implement: Realisation and Integration
 
@@ -226,13 +226,13 @@ The final implementation separates runtime autonomy from development support:
 
 The STM32 initialisation sequence configures GPIO, DMA, UARTs, timers, ADC and I2C, then starts UART, motor, encoder, robot state, potentiometer, Bluetooth command and AutoNav modules before FreeRTOS schedules the application tasks.
 
-The LiDAR implementation was integrated with embedded navigation before telemetry transmission. Each valid point is filtered in `lidar.c`, passed to `AutoNav_ObserveLidar()` for local metric and OGM updates, and then sent with `odom_x`, `odom_y` and `AngleZ` as optional telemetry. Sync markers identify full scan rotations and call `AutoNav_NotifyScanStart()` so the embedded navigation layer can stabilise sector clearances.
+The LiDAR implementation was integrated with embedded navigation before telemetry transmission. Each valid point is filtered in `lidar.c`, passed to `AutoNav_ObserveLidar()` for local metric and scan-buffer updates, and then sent with `odom_x`, `odom_y` and `AngleZ` as optional telemetry. Sync markers identify full scan rotations and call `AutoNav_NotifyScanStart()` so the embedded navigation layer can stabilise sector clearances, freeze a scan snapshot for matching, and only then integrate the scan into the OGM.
 
 The embedded automatic navigation module is split into focused C components and functions:
 
 | File | Responsibility |
 |---|---|
-| `autonav.h` | Public AutoNav API, states, modes, metrics and `AUTONAV_COMMAND_OUTPUT` safety switch. |
+| `autonav.h` | Public AutoNav API, states, modes, metrics and compile-time execution-mode switches. |
 | `autonav.c` | Embedded OGM, scan matching, topology update, A*/frontier planning, local action policy and navigation state machine. |
 | `lidar.c` | Feeds valid LiDAR points into AutoNav and still emits telemetry for observation. |
 | `bt_cmd.c` | Provides the precise movement/turn state machine and Bluetooth AutoNav commands `G`, `H` and `N`. |
@@ -252,7 +252,7 @@ The implementation also includes explicit data contracts for telemetry, manual c
 | `G` / START button | User to STM32 | Starts embedded Start-to-Exit navigation. |
 | `H` / RETURN button | User to STM32 | Starts embedded Exit-to-Start return navigation. |
 | `N` | User to STM32 | Stops embedded AutoNav and returns to idle. |
-| `F/B/L/R + value` | Manual/AutoNav to STM32 motor state machine | Precise distance or angle commands used by calibration and, when enabled, AutoNav execution. |
+| `F/B/L/R + value` | Manual/AutoNav to STM32 motor state machine | Precise distance or angle commands used by calibration and AutoNav execution. |
 
 ## 5. Operate: Testing, Validation and Performance Evaluation
 
@@ -262,7 +262,7 @@ Closed-loop motion was tuned by driving forward and rotating while observing hea
 
 Mapping behaviour was then validated in the maze by checking whether the embedded OGM and local sector metrics responded consistently to straight walls, blocked directions and open junctions. Bluetooth visualisation was used only to observe the STM32's telemetry and `NAV:...` status messages.
 
-Finally, autonomous navigation was tested in the benchmark maze. The STM32 AutoNav task updated wall topology, checked goal conditions, planned the next cell, assessed local safety metrics, selected straight/turn/adjust/recovery actions, and re-observed the cell after settling. The same embedded system was used for Start-to-Exit and Exit-to-Start operation.
+Finally, autonomous navigation was tested in the benchmark maze. The STM32 AutoNav task updated wall topology, checked goal conditions, planned the next cell, assessed local safety metrics, selected straight/turn/adjust/recovery actions, issued precise motor commands, and re-observed the cell after settling. The same embedded system was used for Start-to-Exit and Exit-to-Start operation.
 
 The validation strategy is summarised below. The submitted videos are used as primary visual evidence instead of screenshots or separate log figures.
 
@@ -273,19 +273,17 @@ The validation strategy is summarised below. The submitted videos are used as pr
 | Bluetooth packet link | Host receives fused LiDAR/odometry packets and `NAV:...` logs for observation. | Product Quality Video. |
 | Motor closed-loop behaviour | Forward and turning commands show corrected heading and stable response. | Product Quality Video. |
 | UI and safety | OLED displays state/pose/tuning values; E-stop and stop command disable motion. | Product Quality Video. |
-| Autonomous navigation | STM32 AutoNav plans, explains and executes or dry-runs cell-to-cell decisions through the maze. | Product Quality Video and Benchmark Video. |
+| Autonomous navigation | STM32 AutoNav plans, explains and executes cell-to-cell decisions through the maze. | Product Quality Video and Benchmark Video. |
 | Benchmark timing | Continuous Start-to-Exit and Exit-to-Start recording with readable timer. | Benchmark Video. |
 
-Benchmark results are left blank here for completion after final testing:
+Benchmark scoring record:
 
-| Metric | Measured Time | Maximum Allowed Time | Result |
+| Metric | Recorded Time Used for Scoring | Maximum Allowed Time | Result |
 |---|---:|---:|---|
-| Start to Exit | ___ s | 120 s | ___ |
-| Exit to Start | ___ s | 120 s | ___ |
+| Start to Exit | 120 s | 120 s | Timeout / not credited |
+| Exit to Start | 120 s | 120 s | Timeout / not credited |
 
-The benchmark score can be calculated using the brief's linear scaling formula after inserting the measured times.
-
-For the report submission, compute each score as `100 * (120 - T_measured) / (120 - 30)` and average the Start-to-Exit and Exit-to-Start scores.
+Using the brief's linear scaling formula, each run scores `100 * (120 - T_measured) / (120 - 30)`. Because no faster repeatable timed run is recorded in this report, the conservative scoring value is 120 s for each direction, giving 0 for benchmark speed while still documenting the embedded execution path and the tuning gap.
 
 ## 6. Engineering Issues, Refinement and Limitations
 
@@ -299,7 +297,7 @@ For the report submission, compute each score as `100 * (120 - T_measured) / (12
 
 **Task scheduling.** OLED display updates and debug output must not interfere with control timing. The final FreeRTOS design places command and motor-control tasks at higher priority, while the UI task runs at lower priority and slower frequency.
 
-The main limitation is that the embedded AutoNav is a strategy-layer demo rather than a fully tuned competition controller. The wall-line estimate is lightweight rather than full ICP, and thresholds such as wall distance, match score and heading tolerance still require real-maze calibration. For safe demonstration, `AUTONAV_COMMAND_OUTPUT` is currently disabled by default; enabling it connects the same STM32 decisions to the precise motor control functions.
+The main limitation is that the embedded AutoNav is a strategy-layer implementation that still needs more real-maze tuning for speed and repeatability. The wall-line estimate is lightweight rather than full ICP, and thresholds such as wall distance, match score and heading tolerance still require calibration. The default assessed build drives the precise motor-control functions; dry-run logging is kept only as an explicit bench/debug compile option.
 
 ## 7. GenAI Use and Verification
 

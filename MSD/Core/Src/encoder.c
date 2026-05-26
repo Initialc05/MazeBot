@@ -14,6 +14,8 @@ volatile int32_t encoder_left_ticks  = 0;
 volatile int32_t encoder_right_ticks = 0;
 volatile int32_t encoder_left_delta  = 0;
 volatile int32_t encoder_right_delta = 0;
+volatile int32_t encoder_left_odom_pending  = 0;
+volatile int32_t encoder_right_odom_pending = 0;
 
 float odom_x     = 0.0f;
 float odom_y     = 0.0f;
@@ -45,6 +47,8 @@ void Encoder_Update(void)
 
     encoder_left_ticks  += encoder_left_delta;
     encoder_right_ticks += encoder_right_delta;
+    encoder_left_odom_pending  += encoder_left_delta;
+    encoder_right_odom_pending += encoder_right_delta;
 
     last_cnt_left  = cnt_l;
     last_cnt_right = cnt_r;
@@ -64,8 +68,18 @@ float Encoder_GetRightSpeed(float dt_s)
 
 void Encoder_UpdateOdometry(float heading_rad)
 {
-    float dl = (float)encoder_left_delta  * METERS_PER_TICK * ENCODER_SCALE_FACTOR;
-    float dr = (float)encoder_right_delta * METERS_PER_TICK * ENCODER_SCALE_FACTOR;
+    int32_t left_ticks;
+    int32_t right_ticks;
+
+    __disable_irq();
+    left_ticks = encoder_left_odom_pending;
+    right_ticks = encoder_right_odom_pending;
+    encoder_left_odom_pending = 0;
+    encoder_right_odom_pending = 0;
+    __enable_irq();
+
+    float dl = (float)left_ticks  * METERS_PER_TICK * ENCODER_SCALE_FACTOR;
+    float dr = (float)right_ticks * METERS_PER_TICK * ENCODER_SCALE_FACTOR;
     float dc = (dl + dr) * 0.5f;
 
     odom_x += dc * cosf(heading_rad);
@@ -75,6 +89,11 @@ void Encoder_UpdateOdometry(float heading_rad)
 
 void Encoder_ResetOdometry(void)
 {
+    __disable_irq();
+    encoder_left_odom_pending = 0;
+    encoder_right_odom_pending = 0;
+    __enable_irq();
+
     odom_x = 0.0f;
     odom_y = 0.0f;
     odom_theta = 0.0f;
@@ -90,4 +109,6 @@ void Encoder_ResetTicks(void)
     encoder_right_ticks = 0;
     encoder_left_delta  = 0;
     encoder_right_delta = 0;
+    encoder_left_odom_pending  = 0;
+    encoder_right_odom_pending = 0;
 }
