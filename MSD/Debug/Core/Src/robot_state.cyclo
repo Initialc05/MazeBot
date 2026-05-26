@@ -1,5 +1,0 @@
-../Core/Src/robot_state.c:11:6:RobotState_Init	1
-../Core/Src/robot_state.c:17:6:RobotState_Set	2
-../Core/Src/robot_state.c:24:14:RobotState_Get	1
-../Core/Src/robot_state.c:29:6:RobotState_LatchEstop	1
-../Core/Src/robot_state.c:38:6:RobotState_TryResetEstop	2

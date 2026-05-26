@@ -1,4 +1,0 @@
-../Core/Src/button.c:25:6:Button_Init	2
-../Core/Src/button.c:58:15:Button_Poll	8
-../Core/Src/button.c:83:6:Button_IsPressed	2
-../Core/Src/button.c:90:6:ButtonTask	9

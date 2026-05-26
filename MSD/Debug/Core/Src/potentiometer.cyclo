@@ -1,4 +1,0 @@
-../Core/Src/potentiometer.c:34:14:map_f	3
-../Core/Src/potentiometer.c:42:6:Pot_Init	2
-../Core/Src/potentiometer.c:56:6:Pot_Update	3
-../Core/Src/potentiometer.c:70:10:Pot_GetRaw	2

@@ -1,8 +1,0 @@
-../Core/Src/ssd1306.c:117:13:ssd1306_WriteCmd	32	static
-../Core/Src/ssd1306.c:123:6:SSD1306_Init	16	static
-../Core/Src/ssd1306.c:161:6:SSD1306_Clear	8	static
-../Core/Src/ssd1306.c:166:6:SSD1306_Update	24	static
-../Core/Src/ssd1306.c:179:6:SSD1306_DrawPixel	16	static
-../Core/Src/ssd1306.c:188:6:SSD1306_WriteChar	32	static
-../Core/Src/ssd1306.c:200:6:SSD1306_WriteString	16	static
-../Core/Src/ssd1306.c:209:6:SSD1306_SetContrast	16	static

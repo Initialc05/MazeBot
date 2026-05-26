@@ -1,4 +1,0 @@
-../Core/Src/button.c:25:6:Button_Init	16	static
-../Core/Src/button.c:58:15:Button_Poll	32	static
-../Core/Src/button.c:83:6:Button_IsPressed	16	static
-../Core/Src/button.c:90:6:ButtonTask	24	static

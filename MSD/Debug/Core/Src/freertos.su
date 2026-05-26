@@ -1,6 +1,0 @@
-../Core/Src/freertos.c:77:6:vApplicationGetIdleTaskMemory	24	static
-../Core/Src/freertos.c:90:6:vApplicationGetTimerTaskMemory	24	static
-../Core/Src/freertos.c:106:6:CommandTask	56	static
-../Core/Src/freertos.c:123:6:MotorControlTask	24	static
-../Core/Src/freertos.c:138:6:IMU900Task	16	static
-../Core/Src/freertos.c:152:6:LidarTask	16	static
