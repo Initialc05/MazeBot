@@ -6,7 +6,6 @@
 -include ../makefile.init
 
 RM := rm -rf
-.DEFAULT_GOAL := all
 
 # All of the sources participating in the build are defined here
 -include sources.mk
@@ -65,8 +64,8 @@ all: main-build
 main-build: MSD.elf secondary-outputs
 
 # Tool invocations
-MSD.elf MSD.map: $(OBJS) $(USER_OBJS) ../STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "MSD.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"../STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="MSD.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+MSD.elf MSD.map: $(OBJS) $(USER_OBJS) D:\QMUL\ Modules\Y3_S2\Microprocessor\ Systems\ Design\EoM\MazeBot\MSD\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "MSD.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"D:\QMUL Modules\Y3_S2\Microprocessor Systems Design\EoM\MazeBot\MSD\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="MSD.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

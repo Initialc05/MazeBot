@@ -14,8 +14,6 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.widgets import TextBox, Button
 
-# 禁用与自定义快捷键冲突的 matplotlib 默认 keymap
-# 否则按 L/R/S/Q 等会同时触发 matplotlib 默认行为（如切换 log 刻度、home、保存图、关闭窗口）
 for _key in ('l', 'L'):
     if _key in plt.rcParams['keymap.yscale']:
         plt.rcParams['keymap.yscale'].remove(_key)
@@ -105,6 +103,12 @@ OVERLAP_RATIO = 0.3            # 重合率阈值：>30%的历史点重合则保�
 
 USE_MULTITHREADING = True      # 启用多线程优化（需要多核CPU）
 USE_SEPARATE_ODOM_THREAD = True  # 🚀 启用独立的Odom更新线程（极致实时性）
+
+# 直行航向保持 Ki 调参（发送到下位机，命令格式 I<value>）
+HEADING_KI_DEFAULT = 0.05
+HEADING_KI_MIN = 0.0
+HEADING_KI_MAX = 0.20
+HEADING_KI_STEP = 0.01
 
 # ==================== 数据结构 ====================
 class LidarData:
@@ -930,6 +934,7 @@ class LidarVisualizer:
         self.serial = serial_receiver
         self.lidar_data = LidarData()
         self.slam = SimpleGridSLAM(self.lidar_data)
+        self.heading_ki = HEADING_KI_DEFAULT
         
         # 🚀 扫描缓冲区（用于位姿插值校正）
         self.scan_buffer = ScanBuffer()
@@ -1063,7 +1068,7 @@ class LidarVisualizer:
         )
         
         # 帮助文本（底部左侧）
-        help_text = "Distance(Left): [+][−][0] | Control: [↑↓←→]Move [Space]Stop | NearCorrect(Right): [◀][▶][N] | Map: [S]Save [Q]Quit"
+        help_text = "Distance: [+][−][0] | Ki: [Ki−][KiD][Ki+] | Control: [↑↓←→]Move [Space]Stop | NearCorrect: [◀][▶][N] | Map: [S]Save [Q]Quit"
         self.fig.text(0.01, 0.01, help_text, ha='left', va='bottom', fontsize=7, color='blue')
         
         # === 精准控制面板（底部中央横向排列） ===
@@ -1073,7 +1078,7 @@ class LidarVisualizer:
         spacing = 0.005
         
         # 标题
-        self.fig.text(0.5, 0.085, '━━━━ Precise Control | Distance Calibration | Near Correction ━━━━', ha='center', fontsize=8, 
+        self.fig.text(0.5, 0.096, '━━━━ Precise Control | Distance Calibration | Heading Ki | Near Correction ━━━━', ha='center', fontsize=8, 
                      weight='bold', color='darkblue')
         
         # 🎨 对称布局：距离校准按钮(左) ←→ 近距离校正按钮(右) 关于中心对称
@@ -1145,6 +1150,24 @@ class LidarVisualizer:
                           (self.btn_r45, 'R45'), (self.btn_r90, 'R90')]:
             btn.label.set_fontsize(7)
             btn.on_clicked(lambda event, cmd=label: self.send_precise_command(cmd))
+
+        # Ki调节按钮（发送 I<value> 给下位机，调整直行航向积分）
+        ki_y = bottom_y + button_height + 0.004
+        ki_start_x = 0.79
+        ax_ki_minus = plt.axes([ki_start_x, ki_y, button_width, button_height * 0.8])
+        ax_ki_reset = plt.axes([ki_start_x + (button_width + spacing), ki_y, button_width, button_height * 0.8])
+        ax_ki_plus = plt.axes([ki_start_x + (button_width + spacing) * 2, ki_y, button_width, button_height * 0.8])
+
+        self.btn_ki_minus = Button(ax_ki_minus, 'Ki-', color='lavender', hovercolor='plum')
+        self.btn_ki_reset = Button(ax_ki_reset, 'KiD', color='lightgray', hovercolor='gray')
+        self.btn_ki_plus = Button(ax_ki_plus, 'Ki+', color='honeydew', hovercolor='lightgreen')
+
+        for btn in (self.btn_ki_minus, self.btn_ki_reset, self.btn_ki_plus):
+            btn.label.set_fontsize(7)
+
+        self.btn_ki_minus.on_clicked(lambda event: self.adjust_heading_ki(-HEADING_KI_STEP))
+        self.btn_ki_reset.on_clicked(lambda event: self.set_heading_ki(HEADING_KI_DEFAULT))
+        self.btn_ki_plus.on_clicked(lambda event: self.adjust_heading_ki(HEADING_KI_STEP))
         
         # 右侧：[◀][▶][N] 近距离校正按钮（与左侧距离校准对称）
         # 计算对称位置：左侧3个按钮占 0.08~0.21，右侧应为 0.79~0.92（关于0.5对称）
@@ -1540,10 +1563,11 @@ class LidarVisualizer:
             
             # 横向展开显示（显示坐标系，与地图可视化一致）
             near_status = f"Near:{NEAR_CORRECTION_FACTOR:.2f}{'✓' if USE_NONLINEAR_CORRECTION else '✗'}"
+            ki_status = f"Ki:{self.heading_ki:.3f}"
             rotation_status = self.slam.rotation_filter.get_status()
             status = (f"Scans: {self.lidar_data.scan_count} | Points: {points_info}{time_info} | "
                      f"Pos: ({display_x:.2f}, {display_y:.2f})m | Heading: {imu_theta:.1f}° | "
-                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Rot:{rotation_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
+                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {ki_status} | {near_status} | Rot:{rotation_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
             
             # 多线程模式：显示队列状态和性能统计
             if self.use_multithreading:
@@ -1556,9 +1580,10 @@ class LidarVisualizer:
                 status += f" | Q:{queue_size} Odom:{odom_count} Lidar:{lidar_count} Drop:{drop_count}"
         else:
             near_status = f"Near:{NEAR_CORRECTION_FACTOR:.2f}{'✓' if USE_NONLINEAR_CORRECTION else '✗'}"
+            ki_status = f"Ki:{self.heading_ki:.3f}"
             rotation_status = self.slam.rotation_filter.get_status()
             status = (f"Scans: {self.lidar_data.scan_count} | Points: {points_info}{time_info} | "
-                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {near_status} | Rot:{rotation_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
+                     f"Scale: {DISTANCE_SCALE_FACTOR:.2f}x | {ki_status} | {near_status} | Rot:{rotation_status} | Obstacles: {obstacle_cells} | Max: {max_obstacle_val:.0f}")
 
         self.status_text.set_text(status)
         
@@ -1577,11 +1602,27 @@ class LidarVisualizer:
             
         except Exception as e:
             print(f"❌ 发送指令失败: {e}")
+
+    def set_heading_ki(self, value):
+        """设置下位机直行航向保持Ki"""
+        value = max(HEADING_KI_MIN, min(HEADING_KI_MAX, float(value)))
+        self.heading_ki = value
+        self.send_precise_command(f"I{self.heading_ki:.3f}")
+        print(f"\n🔧 Heading Ki: {self.heading_ki:.3f}")
+
+    def adjust_heading_ki(self, delta):
+        """增减下位机直行航向保持Ki"""
+        self.set_heading_ki(self.heading_ki + delta)
     
     def on_send_command(self, event):
         """发送按钮点击事件"""
         command = self.textbox.text.strip().upper()
         if command:
+            if command.startswith('I'):
+                try:
+                    self.heading_ki = max(HEADING_KI_MIN, min(HEADING_KI_MAX, float(command[1:])))
+                except ValueError:
+                    pass
             self.send_precise_command(command)
             self.textbox.set_val('')  # 清空输入框
         else:
@@ -1591,6 +1632,11 @@ class LidarVisualizer:
         """文本框回车键提交事件"""
         command = text.strip().upper()
         if command:
+            if command.startswith('I'):
+                try:
+                    self.heading_ki = max(HEADING_KI_MIN, min(HEADING_KI_MAX, float(command[1:])))
+                except ValueError:
+                    pass
             self.send_precise_command(command)
             self.textbox.set_val('')  # 清空输入框
     
